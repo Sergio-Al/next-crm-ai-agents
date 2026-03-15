@@ -1,0 +1,27 @@
+{
+  "name": "@crm-agent/channel-adapters",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./adapter": "./src/adapter.ts",
+    "./webchat": "./src/webchat.ts",
+    "./slack": "./src/slack.ts",
+    "./teams": "./src/teams.ts",
+    "./email": "./src/email.ts",
+    "./api": "./src/api.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@crm-agent/shared": "workspace:*",
+    "ioredis": "^5.4.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/node": "^20.11.0"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "@crm-agent/shared",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./db": "./src/db/index.ts",
+    "./db/schema": "./src/db/schema.ts",
+    "./types/protocol": "./src/types/protocol.ts",
+    "./types/events": "./src/types/events.ts",
+    "./types/sessions": "./src/types/sessions.ts",
+    "./types/tools": "./src/types/tools.ts",
+    "./types/crm": "./src/types/crm.ts",
+    "./types/auth": "./src/types/auth.ts"
+  },
+  "scripts": {
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.38.0",
+    "pg": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.18.0",
+    "drizzle-kit": "^0.30.0",
+    "typescript": "^5.5.0"
+  }
+}

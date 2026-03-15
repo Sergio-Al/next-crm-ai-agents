@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.next/
+out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# TypeScript
+*.tsbuildinfo
+
+# Turbo
+.turbo/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/settings.json
+*.swp
+*.swo
+
+# Misc
+*.log
+npm-debug.log*
+.github/prompts/
+
+# Generated
+apps/web/lib/openui-prompt.txt

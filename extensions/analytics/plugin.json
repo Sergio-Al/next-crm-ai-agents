@@ -1,0 +1,10 @@
+{
+  "name": "analytics",
+  "version": "0.0.1",
+  "description": "Analytics extension for tracking conversation metrics and agent performance",
+  "hooks": [
+    "agent_end",
+    "after_tool_call",
+    "session_end"
+  ]
+}

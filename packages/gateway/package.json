@@ -1,0 +1,25 @@
+{
+  "name": "@crm-agent/gateway",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@crm-agent/shared": "workspace:*",
+    "bullmq": "^5.0.0",
+    "ioredis": "^5.4.0",
+    "nanoid": "^5.0.0",
+    "ws": "^8.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.5.0"
+  }
+}

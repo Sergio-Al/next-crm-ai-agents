@@ -1,0 +1,31 @@
+FROM node:20-alpine AS base
+RUN corepack enable && corepack prepare pnpm@8.15.4 --activate
+WORKDIR /app
+
+# Install dependencies
+FROM base AS deps
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY packages/shared/package.json packages/shared/
+COPY packages/agent-worker/package.json packages/agent-worker/
+RUN pnpm install --frozen-lockfile --filter @crm-agent/agent-worker...
+
+# Build
+FROM base AS builder
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=deps /app/packages/agent-worker/node_modules ./packages/agent-worker/node_modules
+COPY packages/shared packages/shared
+COPY packages/agent-worker packages/agent-worker
+COPY tsconfig.json ./
+RUN cd packages/shared && npx tsc --outDir dist
+RUN cd packages/agent-worker && npx tsc --outDir dist
+
+# Production
+FROM node:20-alpine AS runner
+ENV NODE_ENV=production
+WORKDIR /app
+COPY --from=builder /app/packages/agent-worker/dist ./dist
+COPY --from=builder /app/packages/agent-worker/node_modules ./node_modules
+COPY --from=builder /app/packages/shared/dist ./node_modules/@crm-agent/shared/dist
+EXPOSE 0
+CMD ["node", "dist/worker.js"]

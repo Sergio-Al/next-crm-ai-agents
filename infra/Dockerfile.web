@@ -1,0 +1,33 @@
+FROM node:20-alpine AS base
+RUN corepack enable && corepack prepare pnpm@8.15.4 --activate
+WORKDIR /app
+
+# Install dependencies
+FROM base AS deps
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY packages/shared/package.json packages/shared/
+COPY apps/web/package.json apps/web/
+RUN pnpm install --frozen-lockfile --filter @crm-agent/web...
+
+# Build
+FROM base AS builder
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
+COPY packages/shared packages/shared
+COPY apps/web apps/web
+COPY tsconfig.json ./
+RUN rm -f apps/web/.env.local && touch apps/web/.env.local
+RUN cd apps/web && pnpm run build
+
+# Production
+FROM base AS runner
+ENV NODE_ENV=production
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
+COPY --from=builder /app/apps/web/.next/standalone ./
+COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder /app/apps/web/public ./apps/web/public
+USER nextjs
+EXPOSE 3100
+ENV PORT=3100
+CMD ["node", "apps/web/server.js"]

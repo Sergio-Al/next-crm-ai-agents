@@ -1,0 +1,112 @@
+services:
+  # ── Infrastructure ──────────────────────────────────────────
+
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    container_name: crm-agent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: platform
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform -d platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: crm-agent-pgbouncer
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://platform:platform@postgres:5432/platform
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 50
+      MIN_POOL_SIZE: 10
+      AUTH_TYPE: scram-sha-256
+    ports:
+      - "6432:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: crm-agent-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Application Services ────────────────────────────────────
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+    container_name: crm-agent-web
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    depends_on:
+      pgbouncer:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://platform:platform@pgbouncer:5432/platform
+      REDIS_URL: redis://redis:6379
+      AUTH_SECRET: ${AUTH_SECRET:-dev-secret-change-me}
+    env_file:
+      - ../.env
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.gateway
+    restart: unless-stopped
+    ports:
+      - "18789:18789"
+    deploy:
+      replicas: 3
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379
+      GATEWAY_PORT: "18789"
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.worker
+    restart: unless-stopped
+    deploy:
+      replicas: 5
+    depends_on:
+      pgbouncer:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://platform:platform@pgbouncer:5432/platform
+      REDIS_URL: redis://redis:6379
+    env_file:
+      - ../.env
+
+volumes:
+  pgdata:
+  redisdata:
