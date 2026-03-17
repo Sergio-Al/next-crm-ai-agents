@@ -116,7 +116,18 @@
     "notFound": "No contacts found."
   },
   "contactDetail": {
-    "deals": "Deals ({count})"
+    "deals": "Deals ({count})",
+    "back": "Contacts",
+    "loading": "Loading contact...",
+    "notFound": "Contact not found.",
+    "created": "Created {date}",
+    "relatedDeals": "Related Deals",
+    "dealTitle": "Deal",
+    "dealValue": "Value",
+    "dealStage": "Stage",
+    "dealStatus": "Status",
+    "dealClose": "Expected Close",
+    "noDeals": "No deals linked to this contact"
   },
   "dealList": {
     "found": "{count} deal(s) found",
@@ -229,5 +240,51 @@
     "minutesAgo": "{count}m ago",
     "hoursAgo": "{count}h ago",
     "daysAgo": "{count}d ago"
+  },
+  "aiChat": {
+    "floatButtonLabel": "Ask AI about this",
+    "sheetTitleDeal": "Deal",
+    "sheetTitleContact": "Contact",
+    "suggestDealSummary": "Summarize this deal",
+    "suggestDealSummaryDesc": "Get a quick overview of value, stage, and contacts.",
+    "suggestDealSummaryPrompt": "Summarize this deal with key details and current status.",
+    "suggestDealRisk": "Risk assessment",
+    "suggestDealRiskDesc": "Evaluate potential risks and blockers.",
+    "suggestDealRiskPrompt": "Analyze the risks for this deal and suggest mitigation steps.",
+    "suggestDealFollowUp": "Draft follow-up",
+    "suggestDealFollowUpDesc": "Create a follow-up message for the contact.",
+    "suggestDealFollowUpPrompt": "Draft a follow-up email for the contact on this deal.",
+    "suggestDealMoveStage": "Move to next stage",
+    "suggestDealMoveStageDesc": "Advance this deal in the pipeline.",
+    "suggestDealMoveStagePrompt": "Move this deal to the next pipeline stage.",
+    "suggestDealNurture": "Create nurture session",
+    "suggestDealNurtureDesc": "Set up an automated nurture sequence.",
+    "suggestDealNurturePrompt": "Create a nurture session for this deal with follow-ups and checkpoints.",
+    "suggestContactSummary": "Summarize contact",
+    "suggestContactSummaryDesc": "Overview of this contact's profile and activity.",
+    "suggestContactSummaryPrompt": "Give me a summary of this contact including their deals and activity.",
+    "suggestContactDeals": "Show their deals",
+    "suggestContactDealsDesc": "View all deals linked to this contact.",
+    "suggestContactDealsPrompt": "Show me all deals associated with this contact.",
+    "suggestContactEmail": "Draft email",
+    "suggestContactEmailDesc": "Write a personalized email for this contact.",
+    "suggestContactEmailPrompt": "Draft a professional email to this contact.",
+    "suggestContactFollowUp": "Schedule follow-up",
+    "suggestContactFollowUpDesc": "Set a reminder for next steps.",
+    "suggestContactFollowUpPrompt": "Help me schedule a follow-up for this contact.",
+    "suggestContactNurture": "Nurture campaign",
+    "suggestContactNurtureDesc": "Set up automated outreach.",
+    "suggestContactNurturePrompt": "Create a nurture session for this contact with automated follow-ups."
+  },
+  "dealDetail": {
+    "back": "Deals",
+    "value": "Value",
+    "stage": "Stage",
+    "expectedClose": "Expected Close",
+    "contact": "Contact",
+    "noContact": "No contact",
+    "loading": "Loading deal...",
+    "notFound": "Deal not found.",
+    "created": "Created {date}"
   }
 }

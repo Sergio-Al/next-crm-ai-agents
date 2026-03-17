@@ -52,10 +52,11 @@ ${CRM_INSTRUCTIONS}`;
  * POST /api/chat — Stream a response using the AI SDK with CRM tools.
  */
 export async function POST(req: NextRequest) {
-  const { messages, conversationId: existingConvId, locale } = (await req.json()) as {
+  const { messages, conversationId: existingConvId, locale, context } = (await req.json()) as {
     messages?: Array<{ role: string; content: string }>;
     conversationId?: string;
     locale?: string;
+    context?: { type: string; id: string };
   };
 
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -81,9 +82,49 @@ export async function POST(req: NextRequest) {
   const db = getDb();
   const model = process.env.DEFAULT_MODEL ?? "gpt-4o";
 
-  const systemPrompt = locale && locale !== "en"
+  let systemPrompt = locale && locale !== "en"
     ? `${SYSTEM_PROMPT}\n\nIMPORTANT: Always respond in the user's language. The current locale is "${locale}". Respond in that language.`
     : SYSTEM_PROMPT;
+
+  // Inject resource context if provided
+  if (context && typeof context.id === "string" && context.id.length > 0) {
+    if (context.type === "deal") {
+      const deal = await db
+        .select({
+          id: schema.deals.id,
+          title: schema.deals.title,
+          value: schema.deals.value,
+          currency: schema.deals.currency,
+          status: schema.deals.status,
+          expectedClose: schema.deals.expectedClose,
+          stageName: schema.pipelineStages.name,
+          contactFirstName: schema.contacts.firstName,
+          contactLastName: schema.contacts.lastName,
+          contactEmail: schema.contacts.email,
+        })
+        .from(schema.deals)
+        .leftJoin(schema.pipelineStages, eq(schema.deals.stageId, schema.pipelineStages.id))
+        .leftJoin(schema.contacts, eq(schema.deals.contactId, schema.contacts.id))
+        .where(eq(schema.deals.id, context.id))
+        .limit(1)
+        .then((r) => r[0]);
+
+      if (deal) {
+        const contactName = [deal.contactFirstName, deal.contactLastName].filter(Boolean).join(" ");
+        systemPrompt += `\n\n## Active Context\nThe user is currently viewing this deal:\n- Deal ID: ${deal.id}\n- Title: ${deal.title}\n- Value: ${deal.value ?? "N/A"} ${deal.currency ?? "USD"}\n- Status: ${deal.status}\n- Stage: ${deal.stageName ?? "N/A"}\n- Expected Close: ${deal.expectedClose ?? "N/A"}\n- Contact: ${contactName || "N/A"} (${deal.contactEmail ?? "N/A"})\n\nWhen the user says "this deal" they mean "${deal.title}" (ID: ${deal.id}). Use this context to answer questions and pre-fill tool calls.`;
+      }
+    } else if (context.type === "contact") {
+      const contact = await db.query.contacts.findFirst({
+        where: eq(schema.contacts.id, context.id),
+      });
+
+      if (contact) {
+        const fullName = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
+        const tags = Array.isArray(contact.tags) ? contact.tags.join(", ") : "";
+        systemPrompt += `\n\n## Active Context\nThe user is currently viewing this contact:\n- Contact ID: ${contact.id}\n- Name: ${fullName}\n- Email: ${contact.email ?? "N/A"}\n- Phone: ${contact.phone ?? "N/A"}\n- Company: ${contact.companyName ?? "N/A"}\n- Source: ${contact.source ?? "N/A"}\n- Tags: ${tags || "none"}\n\nWhen the user says "this contact" they mean "${fullName}" (ID: ${contact.id}). Use this context to answer questions and pre-fill tool calls.`;
+      }
+    }
+  }
 
   const result = streamText({
     model: openai(model),

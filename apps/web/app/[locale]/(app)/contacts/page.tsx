@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useTranslations } from "next-intl";
 import { Search, Users } from "lucide-react";
+import { useRouter } from "@/i18n/navigation";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -38,6 +39,7 @@ interface Pagination {
 export default function ContactsPage() {
   const t = useTranslations("contacts");
   const tc = useTranslations("common");
+  const router = useRouter();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
   const [search, setSearch] = useState("");
@@ -114,7 +116,7 @@ export default function ContactsPage() {
                     .join("")
                     .toUpperCase() || "?";
                   return (
-                    <TableRow key={c.id}>
+                    <TableRow key={c.id} className="cursor-pointer hover:bg-neutral-800/40" onClick={() => router.push(`/contacts/${c.id}`)}>
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <Avatar className="size-8">

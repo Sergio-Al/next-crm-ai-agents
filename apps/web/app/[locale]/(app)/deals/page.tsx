@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Handshake } from "lucide-react";
+import { Link } from "@/i18n/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -125,7 +126,8 @@ export default function DealsPage() {
                 </div>
                 <div className="p-2 space-y-2 min-h-[8rem]">
                   {stage.deals.map((deal) => (
-                    <Card key={deal.id} className="shadow-sm">
+                    <Link key={deal.id} href={`/deals/${deal.id}`} className="block">
+                    <Card className="shadow-sm hover:bg-neutral-800/40 transition-colors cursor-pointer">
                       <CardContent className="p-3 space-y-2">
                         <p className="font-medium text-sm leading-tight">
                           {deal.title}
@@ -142,6 +144,7 @@ export default function DealsPage() {
                         </div>
                       </CardContent>
                     </Card>
+                    </Link>
                   ))}
                   {stage.deals.length === 0 && (
                     <p className="text-xs text-center text-muted-foreground py-6">
@@ -171,12 +174,12 @@ export default function DealsPage() {
                   const stageName =
                     stages.find((s) => s.id === deal.stageId)?.name ?? "—";
                   return (
-                    <TableRow key={deal.id}>
+                    <TableRow key={deal.id} className="cursor-pointer hover:bg-neutral-800/40">
                       <TableCell>
-                        <div className="flex items-center gap-2">
+                        <Link href={`/deals/${deal.id}`} className="flex items-center gap-2">
                           <Handshake className="size-4 text-primary shrink-0" />
                           <span className="font-medium">{deal.title}</span>
-                        </div>
+                        </Link>
                       </TableCell>
                       <TableCell>
                         {formatCurrency(deal.value, deal.currency)}

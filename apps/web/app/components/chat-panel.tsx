@@ -19,23 +19,57 @@ import { useTranslations, useLocale } from "next-intl";
 import { ChatMessage } from "./chat-message";
 import type { Message } from "ai";
 
-const SUGGESTION_KEYS = [
+export interface ChatContext {
+  type: "deal" | "contact";
+  id: string;
+  label: string;
+}
+
+type SuggestionKey = {
+  key: string;
+  descKey: string;
+  promptKey: string;
+  icon: React.ComponentType<{ strokeWidth?: number; className?: string }>;
+  accent: boolean;
+};
+
+const SUGGESTION_KEYS: SuggestionKey[] = [
   { key: "suggestSearchContacts", descKey: "suggestSearchContactsDesc", promptKey: "suggestSearchContactsPrompt", icon: Search, accent: true },
   { key: "suggestViewDeals", descKey: "suggestViewDealsDesc", promptKey: "suggestViewDealsPrompt", icon: Handshake, accent: true },
   { key: "suggestPipeline", descKey: "suggestPipelineDesc", promptKey: "suggestPipelinePrompt", icon: BarChart2, accent: true },
   { key: "suggestCreateContact", descKey: "suggestCreateContactDesc", promptKey: "suggestCreateContactPrompt", icon: UserPlus, accent: false },
   { key: "suggestFollowUp", descKey: "suggestFollowUpDesc", promptKey: "suggestFollowUpPrompt", icon: CalendarPlus, accent: false },
   { key: "suggestSessionStatus", descKey: "suggestSessionStatusDesc", promptKey: "suggestSessionStatusPrompt", icon: Activity, accent: false },
-] as const;
+];
+
+const DEAL_SUGGESTION_KEYS: SuggestionKey[] = [
+  { key: "suggestDealSummary", descKey: "suggestDealSummaryDesc", promptKey: "suggestDealSummaryPrompt", icon: BarChart2, accent: true },
+  { key: "suggestDealRisk", descKey: "suggestDealRiskDesc", promptKey: "suggestDealRiskPrompt", icon: Activity, accent: true },
+  { key: "suggestDealFollowUp", descKey: "suggestDealFollowUpDesc", promptKey: "suggestDealFollowUpPrompt", icon: CalendarPlus, accent: false },
+  { key: "suggestDealMoveStage", descKey: "suggestDealMoveStageDesc", promptKey: "suggestDealMoveStagePrompt", icon: Handshake, accent: false },
+  { key: "suggestDealNurture", descKey: "suggestDealNurtureDesc", promptKey: "suggestDealNurturePrompt", icon: Zap, accent: false },
+];
+
+const CONTACT_SUGGESTION_KEYS: SuggestionKey[] = [
+  { key: "suggestContactSummary", descKey: "suggestContactSummaryDesc", promptKey: "suggestContactSummaryPrompt", icon: Users, accent: true },
+  { key: "suggestContactDeals", descKey: "suggestContactDealsDesc", promptKey: "suggestContactDealsPrompt", icon: Handshake, accent: true },
+  { key: "suggestContactEmail", descKey: "suggestContactEmailDesc", promptKey: "suggestContactEmailPrompt", icon: Search, accent: false },
+  { key: "suggestContactFollowUp", descKey: "suggestContactFollowUpDesc", promptKey: "suggestContactFollowUpPrompt", icon: CalendarPlus, accent: false },
+  { key: "suggestContactNurture", descKey: "suggestContactNurtureDesc", promptKey: "suggestContactNurturePrompt", icon: Zap, accent: false },
+];
 
 interface ChatPanelProps {
   conversationId?: string | null;
   onConversationCreated?: (id: string) => void;
+  context?: ChatContext | null;
+  compact?: boolean;
 }
 
 export function ChatPanel({
   conversationId,
   onConversationCreated,
+  context,
+  compact,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [activeConvId, setActiveConvId] = useState<string | null>(
@@ -45,6 +79,7 @@ export function ChatPanel({
   const [loadingHistory, setLoadingHistory] = useState(false);
   const titleGenerated = useRef(false);
   const t = useTranslations("chat");
+  const tAi = useTranslations("aiChat");
   const locale = useLocale();
 
   // Load history when conversationId changes
@@ -77,7 +112,11 @@ export function ChatPanel({
     addToolResult,
   } = useChat({
     api: "/api/chat",
-    body: { conversationId: activeConvId, locale },
+    body: {
+      conversationId: activeConvId,
+      locale,
+      ...(context ? { context: { type: context.type, id: context.id } } : {}),
+    },
     initialMessages,
     key: conversationId ?? "new",
     onResponse: (response) => {
@@ -110,14 +149,20 @@ export function ChatPanel({
     [append],
   );
 
+  const activeSuggestions = context
+    ? context.type === "deal"
+      ? DEAL_SUGGESTION_KEYS
+      : CONTACT_SUGGESTION_KEYS
+    : SUGGESTION_KEYS;
+
   const handleSuggestionClick = useCallback(
     (promptKey: string) => {
-      const prompt = t(promptKey as any);
+      const prompt = context ? tAi(promptKey as any) : t(promptKey as any);
       handleInputChange({
         target: { value: prompt },
       } as React.ChangeEvent<HTMLInputElement>);
     },
-    [handleInputChange, t],
+    [handleInputChange, t, tAi, context],
   );
 
   const isLoading = status === "streaming" || status === "submitted";
@@ -130,7 +175,7 @@ export function ChatPanel({
   }, [messages]);
 
   return (
-    <div className="flex flex-col h-full bg-neutral-900/60 rounded-[2rem] border border-white/5 relative overflow-hidden shadow-2xl shadow-black/50">
+    <div className={`flex flex-col h-full bg-neutral-900/60 ${compact ? "rounded-none border-0" : "rounded-[2rem] border border-white/5"} relative overflow-hidden shadow-2xl shadow-black/50`}>
       {/* Radial glow background */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-800/20 via-neutral-900/0 to-transparent pointer-events-none" />
 
@@ -158,8 +203,8 @@ export function ChatPanel({
             </p>
 
             {/* Suggestions Bento Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 w-full max-w-4xl">
-              {SUGGESTION_KEYS.map((tag) => (
+            <div className={`grid gap-3 w-full ${compact ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2 xl:grid-cols-3"} max-w-4xl`}>
+              {activeSuggestions.map((tag) => (
                 <button
                   key={tag.key}
                   onClick={() => handleSuggestionClick(tag.promptKey)}
@@ -173,11 +218,11 @@ export function ChatPanel({
                       />
                     </div>
                     <span className="text-base font-medium text-neutral-200 tracking-tight group-hover:text-white transition-colors">
-                      {t(tag.key)}
+                      {context ? tAi(tag.key as any) : t(tag.key as any)}
                     </span>
                   </div>
                   <span className="text-sm text-neutral-500 group-hover:text-neutral-400 transition-colors pl-11">
-                    {t(tag.descKey)}
+                    {context ? tAi(tag.descKey as any) : t(tag.descKey as any)}
                   </span>
                 </button>
               ))}

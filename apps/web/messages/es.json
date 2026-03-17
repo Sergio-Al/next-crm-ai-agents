@@ -116,7 +116,18 @@
     "notFound": "No se encontraron contactos."
   },
   "contactDetail": {
-    "deals": "Negocios ({count})"
+    "deals": "Negocios ({count})",
+    "back": "Contactos",
+    "loading": "Cargando contacto...",
+    "notFound": "Contacto no encontrado.",
+    "created": "Creado {date}",
+    "relatedDeals": "Negocios Relacionados",
+    "dealTitle": "Negocio",
+    "dealValue": "Valor",
+    "dealStage": "Etapa",
+    "dealStatus": "Estado",
+    "dealClose": "Cierre Esperado",
+    "noDeals": "No hay negocios vinculados a este contacto"
   },
   "dealList": {
     "found": "{count} negocio(s) encontrado(s)",
@@ -229,5 +240,51 @@
     "minutesAgo": "hace {count}m",
     "hoursAgo": "hace {count}h",
     "daysAgo": "hace {count}d"
+  },
+  "aiChat": {
+    "floatButtonLabel": "Consultar a la IA sobre esto",
+    "sheetTitleDeal": "Negocio",
+    "sheetTitleContact": "Contacto",
+    "suggestDealSummary": "Resumir este negocio",
+    "suggestDealSummaryDesc": "Obtén una visión rápida del valor, etapa y contactos.",
+    "suggestDealSummaryPrompt": "Resume este negocio con los detalles clave y su estado actual.",
+    "suggestDealRisk": "Evaluación de riesgos",
+    "suggestDealRiskDesc": "Evalúa los riesgos potenciales y bloqueos.",
+    "suggestDealRiskPrompt": "Analiza los riesgos de este negocio y sugiere pasos de mitigación.",
+    "suggestDealFollowUp": "Redactar seguimiento",
+    "suggestDealFollowUpDesc": "Crea un mensaje de seguimiento para el contacto.",
+    "suggestDealFollowUpPrompt": "Redacta un correo de seguimiento para el contacto de este negocio.",
+    "suggestDealMoveStage": "Avanzar de etapa",
+    "suggestDealMoveStageDesc": "Avanza este negocio en el pipeline.",
+    "suggestDealMoveStagePrompt": "Mueve este negocio a la siguiente etapa del pipeline.",
+    "suggestDealNurture": "Crear sesión de nurture",
+    "suggestDealNurtureDesc": "Configura una secuencia de nurture automatizada.",
+    "suggestDealNurturePrompt": "Crea una sesión de nurture para este negocio con seguimientos y puntos de control.",
+    "suggestContactSummary": "Resumir contacto",
+    "suggestContactSummaryDesc": "Resumen del perfil y actividad de este contacto.",
+    "suggestContactSummaryPrompt": "Dame un resumen de este contacto incluyendo sus negocios y actividad.",
+    "suggestContactDeals": "Ver sus negocios",
+    "suggestContactDealsDesc": "Ver todos los negocios vinculados a este contacto.",
+    "suggestContactDealsPrompt": "Muéstrame todos los negocios asociados a este contacto.",
+    "suggestContactEmail": "Redactar correo",
+    "suggestContactEmailDesc": "Escribe un correo personalizado para este contacto.",
+    "suggestContactEmailPrompt": "Redacta un correo profesional para este contacto.",
+    "suggestContactFollowUp": "Programar seguimiento",
+    "suggestContactFollowUpDesc": "Establece un recordatorio para los próximos pasos.",
+    "suggestContactFollowUpPrompt": "Ayúdame a programar un seguimiento para este contacto.",
+    "suggestContactNurture": "Campaña de nurture",
+    "suggestContactNurtureDesc": "Configura contacto automatizado.",
+    "suggestContactNurturePrompt": "Crea una sesión de nurture para este contacto con seguimientos automatizados."
+  },
+  "dealDetail": {
+    "back": "Negocios",
+    "value": "Valor",
+    "stage": "Etapa",
+    "expectedClose": "Cierre esperado",
+    "contact": "Contacto",
+    "noContact": "Sin contacto",
+    "loading": "Cargando negocio...",
+    "notFound": "Negocio no encontrado.",
+    "created": "Creado {date}"
   }
 }
