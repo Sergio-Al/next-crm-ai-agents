@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
-import { ArrowLeft, Mail, Phone, Building2, Tag, Handshake } from "lucide-react";
+import { ArrowLeft, Mail, Phone, Building2, Tag, Handshake, ShoppingCart } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,6 +28,16 @@ interface ContactDeal {
   stageName: string | null;
 }
 
+interface ContactOrder {
+  id: string;
+  number: string;
+  status: string;
+  totalAmount: string;
+  currency: string | null;
+  itemCount: number;
+  createdAt: string | null;
+}
+
 interface ContactDetail {
   id: string;
   firstName: string | null;
@@ -39,6 +49,7 @@ interface ContactDetail {
   tags: string[] | null;
   createdAt: string | null;
   deals: ContactDeal[];
+  orders: ContactOrder[];
 }
 
 function formatCurrency(val: string | null, cur: string | null) {
@@ -212,6 +223,70 @@ export default function ContactDetailPage() {
                       className="h-20 text-center text-muted-foreground"
                     >
                       {t("noDeals")}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+
+        {/* Related orders */}
+        <div>
+          <h2 className="text-lg font-semibold text-white mb-3">
+            {t("relatedOrders")} ({contact.orders.length})
+          </h2>
+          <div className="rounded-2xl border border-white/5 overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("orderNumber")}</TableHead>
+                  <TableHead>{t("orderTotal")}</TableHead>
+                  <TableHead>{t("orderItems")}</TableHead>
+                  <TableHead>{t("orderStatus")}</TableHead>
+                  <TableHead>{t("orderDate")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {contact.orders.map((order) => (
+                  <TableRow
+                    key={order.id}
+                    className="cursor-pointer hover:bg-neutral-800/40"
+                  >
+                    <TableCell>
+                      <Link
+                        href={`/orders/${order.id}`}
+                        className="flex items-center gap-2 font-medium hover:text-orange-400 transition-colors"
+                      >
+                        <ShoppingCart className="size-4 text-primary shrink-0" />
+                        {order.number}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      {formatCurrency(order.totalAmount, order.currency)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="text-xs">
+                        {order.itemCount}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{order.status}</Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {order.createdAt
+                        ? new Date(order.createdAt).toLocaleDateString()
+                        : "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {contact.orders.length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="h-20 text-center text-muted-foreground"
+                    >
+                      {t("noOrders")}
                     </TableCell>
                   </TableRow>
                 )}

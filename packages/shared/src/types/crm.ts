@@ -108,3 +108,69 @@ export type Activity = {
   metadata: Record<string, unknown>;
   createdAt: Date;
 };
+
+// ── Products & Orders ──
+
+export type Product = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  sku: string | null;
+  description: string | null;
+  category: string | null;
+  price: string;
+  currency: string;
+  unit: string;
+  stockQty: number | null;
+  active: boolean;
+  customFields: Record<string, unknown>;
+  tags: string[];
+  createdBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type OrderStatus =
+  | "draft"
+  | "confirmed"
+  | "shipped"
+  | "delivered"
+  | "cancelled";
+
+export type Order = {
+  id: string;
+  workspaceId: string;
+  number: string;
+  contactId: string | null;
+  accountId: string | null;
+  dealId: string | null;
+  status: OrderStatus;
+  currency: string;
+  subtotal: string;
+  discountAmount: string;
+  taxAmount: string;
+  totalAmount: string;
+  notes: string | null;
+  assignedTo: string | null;
+  confirmedAt: Date | null;
+  shippedAt: Date | null;
+  deliveredAt: Date | null;
+  cancelledAt: Date | null;
+  customFields: Record<string, unknown>;
+  createdBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type OrderItem = {
+  id: string;
+  orderId: string;
+  productId: string | null;
+  productName: string;
+  productSku: string | null;
+  unitPrice: string;
+  quantity: number;
+  discountPct: string;
+  lineTotal: string;
+  notes: string | null;
+};

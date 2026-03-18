@@ -7,6 +7,8 @@ import {
   GitCommitVertical,
   MessageSquare,
   Zap,
+  Package,
+  ShoppingCart,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/navigation";
@@ -17,6 +19,8 @@ const navItems = [
   { key: "dashboard" as const, href: "/dashboard" as const, icon: LayoutDashboard },
   { key: "contacts" as const, href: "/contacts" as const, icon: Users },
   { key: "deals" as const, href: "/deals" as const, icon: Handshake },
+  { key: "products" as const, href: "/products" as const, icon: Package },
+  { key: "orders" as const, href: "/orders" as const, icon: ShoppingCart },
   { key: "pipeline" as const, href: "/pipeline" as const, icon: GitCommitVertical },
   { key: "chat" as const, href: "/chat" as const, icon: MessageSquare },
   { key: "sessions" as const, href: "/sessions" as const, icon: Zap },

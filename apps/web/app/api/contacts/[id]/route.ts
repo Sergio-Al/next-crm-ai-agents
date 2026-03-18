@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import * as schema from "@crm-agent/shared/db/schema";
 
 export async function GET(
@@ -35,7 +35,20 @@ export async function GET(
     )
     .where(eq(schema.deals.contactId, id));
 
-  return NextResponse.json({ data: { ...contact, deals } });
+  const orders = await db
+    .select({
+      id: schema.orders.id,
+      number: schema.orders.number,
+      status: schema.orders.status,
+      totalAmount: schema.orders.totalAmount,
+      currency: schema.orders.currency,
+      createdAt: schema.orders.createdAt,
+      itemCount: sql<number>`(select count(*) from ${schema.orderItems} where ${schema.orderItems.orderId} = ${schema.orders.id})`.as("itemCount"),
+    })
+    .from(schema.orders)
+    .where(eq(schema.orders.contactId, id));
+
+  return NextResponse.json({ data: { ...contact, deals, orders } });
 }
 
 export async function PATCH(

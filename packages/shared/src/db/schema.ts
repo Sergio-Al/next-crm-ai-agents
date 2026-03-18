@@ -13,8 +13,29 @@ import {
   index,
   uniqueIndex,
   primaryKey,
+  customType,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
+
+// pgvector custom type — stores float[] as vector(N) in Postgres
+const vector = customType<{
+  data: number[];
+  driverData: string;
+  config: { dimensions: number };
+}>({
+  dataType(config) {
+    return `vector(${config?.dimensions ?? 1536})`;
+  },
+  toDriver(value: number[]) {
+    return `[${value.join(",")}]`;
+  },
+  fromDriver(value: string) {
+    return value
+      .slice(1, -1)
+      .split(",")
+      .map(Number);
+  },
+});
 
 // ══════════════════════════════════════════════════════════════
 // WORKSPACES
@@ -292,6 +313,106 @@ export const deals = pgTable(
     index("IX_deals_workspace").on(t.workspaceId, t.status),
     index("IX_deals_pipeline").on(t.pipelineId, t.stageId),
     index("IX_deals_contact").on(t.contactId),
+  ],
+);
+
+// ══════════════════════════════════════════════════════════════
+// PRODUCTS & ORDERS
+// ══════════════════════════════════════════════════════════════
+
+export const products = pgTable(
+  "products",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 300 }).notNull(),
+    sku: varchar("sku", { length: 100 }),
+    description: text("description"),
+    category: varchar("category", { length: 200 }),
+    price: decimal("price", { precision: 15, scale: 2 }).notNull(),
+    currency: varchar("currency", { length: 3 }).default("USD"),
+    unit: varchar("unit", { length: 50 }).default("piece"),
+    stockQty: integer("stock_qty"),
+    active: boolean("active").default(true),
+    customFields: jsonb("custom_fields").default({}),
+    tags: text("tags").array().default([]),
+    embedding: vector("embedding", { dimensions: 1536 }),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    index("IX_products_workspace").on(t.workspaceId),
+    uniqueIndex("IX_products_sku").on(t.workspaceId, t.sku),
+  ],
+);
+
+export const orders = pgTable(
+  "orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    number: varchar("number", { length: 50 }).notNull(),
+    contactId: uuid("contact_id").references(() => contacts.id, {
+      onDelete: "set null",
+    }),
+    accountId: uuid("account_id").references(() => crmAccounts.id, {
+      onDelete: "set null",
+    }),
+    dealId: uuid("deal_id").references(() => deals.id, {
+      onDelete: "set null",
+    }),
+    status: varchar("status", { length: 20 }).notNull().default("draft"),
+    currency: varchar("currency", { length: 3 }).default("USD"),
+    subtotal: decimal("subtotal", { precision: 15, scale: 2 }).default("0"),
+    discountAmount: decimal("discount_amount", { precision: 15, scale: 2 }).default("0"),
+    taxAmount: decimal("tax_amount", { precision: 15, scale: 2 }).default("0"),
+    totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).default("0"),
+    notes: text("notes"),
+    assignedTo: uuid("assigned_to").references(() => users.id),
+    confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    shippedAt: timestamp("shipped_at", { withTimezone: true }),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    customFields: jsonb("custom_fields").default({}),
+    createdBy: uuid("created_by").references(() => users.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("IX_orders_number").on(t.workspaceId, t.number),
+    index("IX_orders_workspace_status").on(t.workspaceId, t.status),
+    index("IX_orders_contact").on(t.contactId),
+    index("IX_orders_account").on(t.accountId),
+    index("IX_orders_deal").on(t.dealId),
+  ],
+);
+
+export const orderItems = pgTable(
+  "order_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    productId: uuid("product_id").references(() => products.id, {
+      onDelete: "set null",
+    }),
+    productName: varchar("product_name", { length: 300 }).notNull(),
+    productSku: varchar("product_sku", { length: 100 }),
+    unitPrice: decimal("unit_price", { precision: 15, scale: 2 }).notNull(),
+    quantity: integer("quantity").notNull().default(1),
+    discountPct: decimal("discount_pct", { precision: 5, scale: 2 }).default("0"),
+    lineTotal: decimal("line_total", { precision: 15, scale: 2 }).notNull(),
+    notes: text("notes"),
+  },
+  (t) => [
+    index("IX_order_items_order").on(t.orderId),
+    index("IX_order_items_product").on(t.productId),
   ],
 );
 
@@ -687,6 +808,8 @@ export const workspacesRelations = relations(workspaces, ({ one, many }) => ({
   leads: many(leads),
   deals: many(deals),
   tasks: many(tasks),
+  products: many(products),
+  orders: many(orders),
 }));
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -746,6 +869,7 @@ export const contactsRelations = relations(contacts, ({ one, many }) => ({
   leads: many(leads),
   deals: many(deals),
   activities: many(activities),
+  orders: many(orders),
 }));
 
 export const crmAccountsRelations = relations(
@@ -757,6 +881,7 @@ export const crmAccountsRelations = relations(
     }),
     contacts: many(contacts),
     deals: many(deals),
+    orders: many(orders),
   }),
 );
 
@@ -782,6 +907,7 @@ export const dealsRelations = relations(deals, ({ one, many }) => ({
     references: [crmAccounts.id],
   }),
   activities: many(activities),
+  orders: many(orders),
 }));
 
 export const pipelinesRelations = relations(pipelines, ({ one, many }) => ({
@@ -928,5 +1054,44 @@ export const sessionEventsRelations = relations(sessionEvents, ({ one }) => ({
   session: one(agentSessions, {
     fields: [sessionEvents.sessionId],
     references: [agentSessions.id],
+  }),
+}));
+
+export const productsRelations = relations(products, ({ one, many }) => ({
+  workspace: one(workspaces, {
+    fields: [products.workspaceId],
+    references: [workspaces.id],
+  }),
+  orderItems: many(orderItems),
+}));
+
+export const ordersRelations = relations(orders, ({ one, many }) => ({
+  workspace: one(workspaces, {
+    fields: [orders.workspaceId],
+    references: [workspaces.id],
+  }),
+  contact: one(contacts, {
+    fields: [orders.contactId],
+    references: [contacts.id],
+  }),
+  account: one(crmAccounts, {
+    fields: [orders.accountId],
+    references: [crmAccounts.id],
+  }),
+  deal: one(deals, {
+    fields: [orders.dealId],
+    references: [deals.id],
+  }),
+  items: many(orderItems),
+}));
+
+export const orderItemsRelations = relations(orderItems, ({ one }) => ({
+  order: one(orders, {
+    fields: [orderItems.orderId],
+    references: [orders.id],
+  }),
+  product: one(products, {
+    fields: [orderItems.productId],
+    references: [products.id],
   }),
 }));

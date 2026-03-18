@@ -17,14 +17,14 @@ apps/
     messages/        → Translation files (en.json, es.json)
     middleware.ts    → Locale detection & redirect
 packages/
-  shared/          → Drizzle ORM schema, DB utilities, shared types
+  shared/          → Drizzle ORM schema (incl. products, orders, pgvector), shared types
   gateway/         → WebSocket gateway
   agent-worker/    → BullMQ agent worker
   channel-adapters/→ Channel adapter layer
 infra/
-  docker-compose.yml → TimescaleDB, PgBouncer, Redis
+  docker-compose.yml → TimescaleDB + pgvector, PgBouncer, Redis
 scripts/
-  seed.ts          → Demo data seeder
+  seed.ts          → Demo data seeder (contacts, deals, products, orders)
 ```
 
 ## Getting Started
@@ -72,7 +72,7 @@ pnpm db:push
 pnpm seed
 ```
 
-Seeds the database with a workspace, user, 5 accounts, 20 contacts, 8 leads, a pipeline with 5 stages, and 15 deals.
+Seeds the database with a workspace, user, 5 accounts, 20 contacts, 8 leads, a pipeline with 5 stages, 15 deals, 20 products (across 5 categories), and 15 orders with line items.
 
 ### 6. Run the web app
 
@@ -130,7 +130,7 @@ The app is fully internationalized using [next-intl](https://next-intl.dev/) wit
 ### How It Works
 
 - **URL-prefix routing** — Each locale has its own URL prefix (e.g. `/en/dashboard`, `/es/dashboard`). The middleware detects the browser's preferred language and redirects accordingly.
-- **Translation files** — All UI strings live in `apps/web/messages/en.json` and `apps/web/messages/es.json`, organized by namespace (nav, chat, dashboard, contacts, deals, pipeline, sessions, etc.).
+- **Translation files** — All UI strings live in `apps/web/messages/en.json` and `apps/web/messages/es.json`, organized by namespace (nav, chat, dashboard, contacts, deals, products, orders, pipeline, sessions, etc.).
 - **Locale-aware navigation** — Internal links use `Link`, `useRouter`, and `usePathname` from `@/i18n/navigation` to preserve the current locale across navigations.
 - **AI responses** — The chat API passes the current locale to the LLM system prompt, so the assistant responds in the user's language.
 - **Language switcher** — An EN/ES toggle in the sidebar footer lets users switch languages instantly.
@@ -151,10 +151,10 @@ The Chat page (`/chat`) provides a conversational interface to manage your CRM. 
 
 ### CRM Operations
 
-Ask the assistant to work with contacts, deals, and pipeline stages using natural language:
+Ask the assistant to work with contacts, deals, products, orders, and pipeline stages using natural language:
 
 - **Search contacts** — *"Find contacts at Acme Corp"*, *"Look up john@example.com"*
-- **View contact details** — *"Show me details for Jane Smith"* (includes linked deals)
+- **View contact details** — *"Show me details for Jane Smith"* (includes linked deals and orders)
 - **Create contacts** — *"Add a new contact: John Doe, john@acme.com, works at Acme"*
   - A form card appears for you to review and edit before confirming
 - **Search deals** — *"Show me all open deals"*, *"Find deals worth over $50k"*
@@ -162,6 +162,13 @@ Ask the assistant to work with contacts, deals, and pipeline stages using natura
   - Review card appears; the assistant will look up pipeline stages and contact IDs for you
 - **Move deals** — *"Move the Acme deal to Negotiation stage"*
   - A confirmation card shows current → new stage before applying
+- **Search products** — *"Show me all software products"*, *"Find products in the Support category"*
+- **Create orders** — *"Create an order for James Rodriguez"*
+  - A form card appears for review before confirming
+- **Order history** — *"Show me the order history for James Rodriguez"*
+- **AI product suggestions** — *"What products should I recommend to this contact?"*
+  - Uses RAG-based semantic search on purchase history to suggest relevant products
+- **Order status** — *"What's the status of order ORD-0001?"*
 
 All write operations use the **human-in-the-loop (HITL) pattern**: the AI proposes, you review a form card, then confirm or cancel. Nothing is written until you approve.
 
@@ -170,6 +177,64 @@ The AI responds in the user's current locale — switch to Spanish and the assis
 ### Conversations
 
 Each chat is persisted as a conversation. The sidebar shows your conversation history and you can switch between them. The `X-Conversation-Id` header links messages to the conversation in the database.
+
+### Contextual AI Chat (Deal, Contact & Order Detail Pages)
+
+Every deal, contact, and order detail page includes a **floating AI button** (Sparkles icon, bottom-right corner). Clicking it opens a right-side sheet with a context-aware chat:
+
+- **Automatic context injection** — The AI already knows which deal, contact, or order you're viewing. Say *"summarize this deal"*, *"draft an email to this contact"*, or *"suggest products for this order"* without specifying names or IDs.
+- **Context-specific suggestions** — The prompt chips change based on the resource type:
+  - **Deals**: Summarize / Risk assessment / Draft follow-up / Move to next stage / Create nurture session
+  - **Contacts**: Summarize / Show their deals / Draft email / Schedule follow-up / Nurture campaign
+  - **Orders**: Summarize order / Suggest products / Check status / Follow up on order
+- **Server-side context** — The client only sends `{ type, id }`. The server fetches the resource from the database and injects it into the system prompt — no sensitive data is passed from the client.
+- **Fresh conversation per session** — Each time you open the sheet, a new conversation thread starts (no history pollution from the main `/chat` page).
+- **Navigable detail pages** — Click any deal card (board or list view) on `/deals` to open its detail page. Click any row on `/contacts` to open the contact detail page. Click any row on `/orders` to open the order detail page. All pages show metadata, related records, and the floating AI chat button.
+
+Works in both English and Spanish — the AI responds in the active locale.
+
+---
+
+## Products & Orders
+
+The platform includes a full product catalog and order management system with AI-powered product suggestions.
+
+### Products (`/products`)
+
+Browse, search, and manage your product catalog:
+
+- **List view** — Paginated table with search, showing name, SKU, category, price, stock, and active status
+- **Detail page** (`/products/[id]`) — Full product info with stat cards (price, category, stock, tags), description, and status badge
+- **Categories** — Products are organized into categories (Software, Services, Support, Hardware, Add-ons in the seed data)
+- **Embeddings** — Product descriptions are embedded using OpenAI `text-embedding-3-small` via a BullMQ queue for async processing. Embeddings are stored as `vector(1536)` columns using pgvector and power the AI product suggestion engine.
+
+### Orders (`/orders`)
+
+Track and manage customer orders through their lifecycle:
+
+- **List view** — Paginated table with search and status filter dropdown (All / Draft / Confirmed / Shipped / Delivered / Cancelled)
+- **Detail page** (`/orders/[id]`) — Full order view with:
+  - **Metadata cards** — Total amount (with discount/tax breakdown), item count + subtotal, linked contact, and status timeline
+  - **Items table** — Product name, SKU, unit price, quantity, discount, and line total for each item
+  - **Floating AI chat** — Context-aware assistant that knows the order's items, totals, and contact
+- **Status lifecycle** — Orders follow a strict state machine: `draft → confirmed → shipped → delivered` (can be `cancelled` from draft or confirmed)
+- **Auto-generated order numbers** — Sequential `ORD-XXXX` format
+
+### AI Product Suggestions
+
+The AI can recommend products for a contact based on their purchase history using RAG (Retrieval-Augmented Generation):
+
+1. Loads the contact's past orders and items to build a purchase profile
+2. Embeds the profile text using `text-embedding-3-small`
+3. Performs pgvector cosine similarity search against the product catalog embeddings
+4. Passes the top candidates to an LLM (`gpt-4o-mini`) for reasoning and ranking
+5. Returns ranked suggestions with explanations for each recommendation
+
+Trigger suggestions via chat (*"What products should I recommend for this contact?"*) or programmatically via `POST /api/orders/suggest`.
+
+### Contact Integration
+
+Contact detail pages (`/contacts/[id]`) show a **Related Orders** section alongside the existing Related Deals section, displaying the contact's order history with order number, total, item count, status, and date.
 
 ---
 

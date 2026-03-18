@@ -5,7 +5,7 @@ import { z } from "zod";
 import { readFileSync } from "fs";
 import path from "path";
 import { getDb } from "@/lib/db";
-import { sql, eq, and } from "drizzle-orm";
+import { sql, eq, and, desc } from "drizzle-orm";
 import * as schema from "@crm-agent/shared/db/schema";
 import {
   createConversation,
@@ -21,15 +21,17 @@ const OPENUI_PROMPT = readFileSync(
   "utf-8",
 );
 
-const CRM_INSTRUCTIONS = `You are a CRM assistant for Acme Corp. You help users manage contacts, deals, and the sales pipeline.
+const CRM_INSTRUCTIONS = `You are a CRM assistant for Acme Corp. You help users manage contacts, deals, the sales pipeline, products, and orders.
 
-You have access to tools that interact with the CRM database. Use them when the user asks about contacts, deals, or pipeline.
+You have access to tools that interact with the CRM database. Use them when the user asks about contacts, deals, pipeline, products, or orders.
 
 For READ operations (searching, viewing), use the tools directly — results will be shown to the user immediately.
 
-For WRITE operations (creating contacts, creating deals, updating deal stages), ALWAYS call the preview tools immediately (previewCreateContact, previewCreateDeal, previewUpdateDealStage). These render rich interactive forms with contact search, stage dropdowns, and validation — the user can fill in any missing fields directly in the form. NEVER generate openui-lang Form components for CRM write operations. Do NOT say you've created something — the user will confirm via the form.
+For WRITE operations (creating contacts, creating deals, updating deal stages, creating orders), ALWAYS call the preview tools immediately (previewCreateContact, previewCreateDeal, previewUpdateDealStage, previewCreateOrder). These render rich interactive forms with contact search, stage dropdowns, and validation — the user can fill in any missing fields directly in the form. NEVER generate openui-lang Form components for CRM write operations. Do NOT say you've created something — the user will confirm via the form.
 
-CRITICAL: When the user asks to create a contact, deal, or update a stage, call the appropriate preview tool RIGHT AWAY. Do NOT ask the user for details first. Do NOT list what information you need. Just call the tool immediately with whatever information you have (even if it's nothing) — the form handles the rest. For example, if the user says "create a new deal", call previewCreateDeal immediately with an empty title. Never respond with text asking for fields.
+CRITICAL: When the user asks to create a contact, deal, order, or update a stage, call the appropriate preview tool RIGHT AWAY. Do NOT ask the user for details first. Do NOT list what information you need. Just call the tool immediately with whatever information you have (even if it's nothing) — the form handles the rest. For example, if the user says "create a new deal", call previewCreateDeal immediately with an empty title. Never respond with text asking for fields.
+
+When the user asks about product suggestions or what to recommend for a contact, use the suggestProducts tool. It uses AI-powered semantic search on the product catalog based on the contact's purchase history.
 
 You can also create agent sessions — background processes that execute multi-step plans like follow-ups, reminders, and nurture sequences. Use previewCreateSession to propose a plan with steps. Step types:
 - crm_action: Execute a CRM operation (create activity, update record)
@@ -122,6 +124,39 @@ export async function POST(req: NextRequest) {
         const fullName = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
         const tags = Array.isArray(contact.tags) ? contact.tags.join(", ") : "";
         systemPrompt += `\n\n## Active Context\nThe user is currently viewing this contact:\n- Contact ID: ${contact.id}\n- Name: ${fullName}\n- Email: ${contact.email ?? "N/A"}\n- Phone: ${contact.phone ?? "N/A"}\n- Company: ${contact.companyName ?? "N/A"}\n- Source: ${contact.source ?? "N/A"}\n- Tags: ${tags || "none"}\n\nWhen the user says "this contact" they mean "${fullName}" (ID: ${contact.id}). Use this context to answer questions and pre-fill tool calls.`;
+      }
+    } else if (context.type === "order") {
+      const order = await db
+        .select({
+          id: schema.orders.id,
+          number: schema.orders.number,
+          status: schema.orders.status,
+          totalAmount: schema.orders.totalAmount,
+          currency: schema.orders.currency,
+          contactFirstName: schema.contacts.firstName,
+          contactLastName: schema.contacts.lastName,
+          contactEmail: schema.contacts.email,
+          contactId: schema.orders.contactId,
+        })
+        .from(schema.orders)
+        .leftJoin(schema.contacts, eq(schema.orders.contactId, schema.contacts.id))
+        .where(eq(schema.orders.id, context.id))
+        .limit(1)
+        .then((r) => r[0]);
+
+      if (order) {
+        const contactName = [order.contactFirstName, order.contactLastName].filter(Boolean).join(" ");
+        const items = await db
+          .select({
+            productName: schema.orderItems.productName,
+            quantity: schema.orderItems.quantity,
+            lineTotal: schema.orderItems.lineTotal,
+          })
+          .from(schema.orderItems)
+          .where(eq(schema.orderItems.orderId, context.id));
+
+        const itemList = items.map((i) => `  - ${i.productName} x${i.quantity} = ${i.lineTotal}`).join("\n");
+        systemPrompt += `\n\n## Active Context\nThe user is currently viewing this order:\n- Order ID: ${order.id}\n- Order Number: ${order.number}\n- Status: ${order.status}\n- Total: ${order.totalAmount} ${order.currency ?? "USD"}\n- Contact: ${contactName || "N/A"} (${order.contactEmail ?? "N/A"})\n- Items:\n${itemList}\n\nWhen the user says "this order" they mean "${order.number}" (ID: ${order.id}). Use this context to answer questions. If the user asks for product suggestions, use the contact ID ${order.contactId ?? "N/A"} with suggestProducts.`;
       }
     }
   }
@@ -363,6 +398,166 @@ export async function POST(req: NextRequest) {
             totalSteps: plan.length,
             nextRunAt: session.nextRunAt,
             recentEvents: events,
+          };
+        },
+      }),
+
+      // ── Products & Orders tools ──
+
+      searchProducts: tool({
+        description:
+          "Search the product catalog by name, SKU, category, or tags. Returns matching active products.",
+        parameters: z.object({
+          query: z.string().optional().describe("Search term for product name, SKU, or description"),
+          category: z.string().optional().describe("Filter by category"),
+        }),
+        execute: async ({ query, category }) => {
+          const conditions = [sql`${schema.products.active} = true`];
+          if (query) {
+            conditions.push(
+              sql`(${schema.products.name} ilike ${"%" + query + "%"} or ${schema.products.sku} ilike ${"%" + query + "%"} or ${schema.products.description} ilike ${"%" + query + "%"})`,
+            );
+          }
+          if (category) {
+            conditions.push(sql`${schema.products.category} ilike ${"%" + category + "%"}`);
+          }
+          const where = sql.join(conditions, sql` and `);
+
+          const rows = await db
+            .select({
+              id: schema.products.id,
+              name: schema.products.name,
+              sku: schema.products.sku,
+              category: schema.products.category,
+              price: schema.products.price,
+              currency: schema.products.currency,
+              unit: schema.products.unit,
+              stockQty: schema.products.stockQty,
+            })
+            .from(schema.products)
+            .where(where)
+            .limit(15);
+
+          return { products: rows, total: rows.length };
+        },
+      }),
+
+      getOrderHistory: tool({
+        description:
+          "Get order history for a contact. Returns their recent orders with items.",
+        parameters: z.object({
+          contactId: z.string().uuid().describe("The contact ID to get order history for"),
+          limit: z.number().optional().describe("Max orders to return (default 10)"),
+        }),
+        execute: async ({ contactId, limit: maxOrders }) => {
+          const orders = await db
+            .select({
+              id: schema.orders.id,
+              number: schema.orders.number,
+              status: schema.orders.status,
+              totalAmount: schema.orders.totalAmount,
+              currency: schema.orders.currency,
+              createdAt: schema.orders.createdAt,
+            })
+            .from(schema.orders)
+            .where(eq(schema.orders.contactId, contactId))
+            .orderBy(desc(schema.orders.createdAt))
+            .limit(maxOrders ?? 10);
+
+          const ordersWithItems = await Promise.all(
+            orders.map(async (order) => {
+              const items = await db
+                .select({
+                  productName: schema.orderItems.productName,
+                  quantity: schema.orderItems.quantity,
+                  unitPrice: schema.orderItems.unitPrice,
+                  lineTotal: schema.orderItems.lineTotal,
+                })
+                .from(schema.orderItems)
+                .where(eq(schema.orderItems.orderId, order.id));
+              return { ...order, items };
+            }),
+          );
+
+          return { orders: ordersWithItems, total: orders.length };
+        },
+      }),
+
+      suggestProducts: tool({
+        description:
+          "Get AI-powered product suggestions for a contact based on their purchase history. Uses semantic search on the product catalog.",
+        parameters: z.object({
+          contactId: z.string().uuid().describe("The contact ID to get suggestions for"),
+        }),
+        execute: async ({ contactId }) => {
+          const res = await fetch(
+            `${process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3100"}/api/orders/suggest`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ contactId }),
+            },
+          );
+          if (!res.ok) return { error: "Failed to get suggestions" };
+          return await res.json();
+        },
+      }),
+
+      previewCreateOrder: tool({
+        description:
+          "Preview creating a new order. Call this immediately when the user wants to create an order — the form lets them fill in details. Do NOT ask for fields first.",
+        parameters: z.object({
+          contactId: z.string().uuid().optional().describe("Contact ID for the order"),
+          items: z.array(z.object({
+            productId: z.string().uuid().describe("Product ID"),
+            quantity: z.number().min(1).describe("Quantity"),
+          })).optional().describe("Order line items"),
+          notes: z.string().optional().describe("Order notes"),
+        }),
+      }),
+
+      getOrderStatus: tool({
+        description:
+          "Get the current status and details of a specific order.",
+        parameters: z.object({
+          orderId: z.string().uuid().describe("The order ID"),
+        }),
+        execute: async ({ orderId }) => {
+          const order = await db
+            .select({
+              id: schema.orders.id,
+              number: schema.orders.number,
+              status: schema.orders.status,
+              totalAmount: schema.orders.totalAmount,
+              currency: schema.orders.currency,
+              createdAt: schema.orders.createdAt,
+              confirmedAt: schema.orders.confirmedAt,
+              shippedAt: schema.orders.shippedAt,
+              deliveredAt: schema.orders.deliveredAt,
+              contactFirstName: schema.contacts.firstName,
+              contactLastName: schema.contacts.lastName,
+            })
+            .from(schema.orders)
+            .leftJoin(schema.contacts, eq(schema.orders.contactId, schema.contacts.id))
+            .where(eq(schema.orders.id, orderId))
+            .limit(1)
+            .then((r) => r[0]);
+
+          if (!order) return { error: "Order not found" };
+
+          const items = await db
+            .select({
+              productName: schema.orderItems.productName,
+              quantity: schema.orderItems.quantity,
+              lineTotal: schema.orderItems.lineTotal,
+            })
+            .from(schema.orderItems)
+            .where(eq(schema.orderItems.orderId, orderId));
+
+          return {
+            ...order,
+            contactName: [order.contactFirstName, order.contactLastName].filter(Boolean).join(" "),
+            items,
           };
         },
       }),

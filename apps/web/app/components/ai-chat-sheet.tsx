@@ -51,7 +51,7 @@ export function AiChatSheet({ context }: AiChatSheetProps) {
           <SheetHeader className="px-4 pt-4 pb-2 border-b border-white/5">
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="text-xs uppercase">
-                {context.type === "deal" ? t("sheetTitleDeal") : t("sheetTitleContact")}
+                {context.type === "deal" ? t("sheetTitleDeal") : context.type === "order" ? t("sheetTitleOrder") : t("sheetTitleContact")}
               </Badge>
               <SheetTitle className="text-sm truncate">
                 {context.label}

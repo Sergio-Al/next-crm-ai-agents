@@ -14,13 +14,15 @@ import {
   Activity,
   CalendarPlus,
   UserPlus,
+  ShoppingCart,
+  Package,
 } from "lucide-react";
 import { useTranslations, useLocale } from "next-intl";
 import { ChatMessage } from "./chat-message";
 import type { Message } from "ai";
 
 export interface ChatContext {
-  type: "deal" | "contact";
+  type: "deal" | "contact" | "order";
   id: string;
   label: string;
 }
@@ -56,6 +58,13 @@ const CONTACT_SUGGESTION_KEYS: SuggestionKey[] = [
   { key: "suggestContactEmail", descKey: "suggestContactEmailDesc", promptKey: "suggestContactEmailPrompt", icon: Search, accent: false },
   { key: "suggestContactFollowUp", descKey: "suggestContactFollowUpDesc", promptKey: "suggestContactFollowUpPrompt", icon: CalendarPlus, accent: false },
   { key: "suggestContactNurture", descKey: "suggestContactNurtureDesc", promptKey: "suggestContactNurturePrompt", icon: Zap, accent: false },
+];
+
+const ORDER_SUGGESTION_KEYS: SuggestionKey[] = [
+  { key: "suggestOrderSummary", descKey: "suggestOrderSummaryDesc", promptKey: "suggestOrderSummaryPrompt", icon: ShoppingCart, accent: true },
+  { key: "suggestOrderProducts", descKey: "suggestOrderProductsDesc", promptKey: "suggestOrderProductsPrompt", icon: Package, accent: true },
+  { key: "suggestOrderStatus", descKey: "suggestOrderStatusDesc", promptKey: "suggestOrderStatusPrompt", icon: Activity, accent: false },
+  { key: "suggestOrderFollowUp", descKey: "suggestOrderFollowUpDesc", promptKey: "suggestOrderFollowUpPrompt", icon: CalendarPlus, accent: false },
 ];
 
 interface ChatPanelProps {
@@ -152,7 +161,9 @@ export function ChatPanel({
   const activeSuggestions = context
     ? context.type === "deal"
       ? DEAL_SUGGESTION_KEYS
-      : CONTACT_SUGGESTION_KEYS
+      : context.type === "order"
+        ? ORDER_SUGGESTION_KEYS
+        : CONTACT_SUGGESTION_KEYS
     : SUGGESTION_KEYS;
 
   const handleSuggestionClick = useCallback(
