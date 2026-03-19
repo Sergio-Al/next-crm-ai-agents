@@ -77,6 +77,21 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Server-side payload guardrail: reject oversized message payloads
+  const totalChars = messages.reduce(
+    (sum: number, m: { content?: string }) => sum + (m.content?.length ?? 0),
+    0,
+  );
+  const MAX_PAYLOAD_CHARS = 120_000; // ~30k tokens
+  if (totalChars > MAX_PAYLOAD_CHARS) {
+    return new Response(
+      JSON.stringify({
+        error: "Message payload too large. Please start a new conversation or shorten your messages.",
+      }),
+      { status: 413, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
   let conversationId = existingConvId;
   if (!conversationId) {
     const conv = await createConversation();

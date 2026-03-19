@@ -97,6 +97,7 @@ export async function POST(req: NextRequest) {
         {
           type: "tool-result" as const,
           toolCallId,
+          toolName,
           result: toolResult,
         },
       ],
