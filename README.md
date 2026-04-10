@@ -47,6 +47,12 @@ Edit `.env` and add your API key(s):
 OPENAI_API_KEY=sk-...
 ```
 
+Then copy the same values into the web app runtime env file (required for Next.js API routes like `/api/chat`):
+
+```bash
+cp .env apps/web/.env.local
+```
+
 The database and Redis defaults work out of the box with the Docker Compose setup.
 
 ### 3. Start infrastructure
@@ -65,6 +71,8 @@ This starts:
 ```bash
 pnpm db:push
 ```
+
+`db:push` now runs a prepare step that ensures the `vector` extension exists before applying schema changes.
 
 ### 5. Seed demo data
 
@@ -91,6 +99,16 @@ pnpm --filter @crm-agent/agent-worker dev
 ```
 
 This is required for Agent Sessions to execute (follow-up sequences, reminders, nurture campaigns, etc.). The web app works without it, but sessions will remain queued and won't progress.
+
+## Common Setup Pitfalls
+
+- **`/api/chat` returns `"An error occurred."`**
+  - Usually means `OPENAI_API_KEY` is missing in `apps/web/.env.local`.
+  - Ensure `apps/web/.env.local` exists and contains `OPENAI_API_KEY`.
+
+- **`error: type "vector" does not exist` during DB push/migrate**
+  - Re-run `pnpm db:push` (or `pnpm db:migrate`).
+  - The shared package now auto-runs `CREATE EXTENSION IF NOT EXISTS vector;` before schema operations.
 
 ## Available Scripts
 

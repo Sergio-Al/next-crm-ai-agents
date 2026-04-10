@@ -576,5 +576,14 @@ export async function POST(req: NextRequest) {
 
   return result.toDataStreamResponse({
     headers: { "X-Conversation-Id": conversationId },
+    getErrorMessage: (error) => {
+      console.error("[api/chat] stream error:", error);
+
+      if (process.env.NODE_ENV !== "production") {
+        return error instanceof Error ? error.message : "Unknown stream error";
+      }
+
+      return "An error occurred.";
+    },
   });
 }

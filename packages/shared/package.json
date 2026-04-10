@@ -14,9 +14,10 @@
     "./types/auth": "./src/types/auth.ts"
   },
   "scripts": {
+    "db:prepare": "node ./src/db/ensure-extensions.mjs",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
+    "db:migrate": "pnpm run db:prepare && drizzle-kit migrate",
+    "db:push": "pnpm run db:prepare && drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "typecheck": "tsc --noEmit"
   },
