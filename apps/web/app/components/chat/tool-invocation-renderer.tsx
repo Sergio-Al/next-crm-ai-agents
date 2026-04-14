@@ -32,8 +32,18 @@ export function ToolInvocationRenderer({ part, addToolResult }: Props) {
   };
 
   // Loading state for read tools
-  if (state === "input-available" || state === "input-streaming") {
-    // Write tools render forms
+  // While tool args are still streaming, show a loading indicator for all tools
+  if (state === "input-streaming") {
+    return (
+      <div className="flex items-center gap-2 rounded-md border bg-background/50 p-3 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" />
+        <span>{t("running", { toolName })}</span>
+      </div>
+    );
+  }
+
+  if (state === "input-available") {
+    // Write tools render forms (args are now complete)
     if (toolName === "previewCreateContact") {
       return (
         <ContactFormCard

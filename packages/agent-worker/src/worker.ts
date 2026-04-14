@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
 import { Redis } from "ioredis";
-import { streamText, stepCountIs } from "ai";
+import { streamText } from "ai";
 import { createProvider } from "./llm-client.js";
 import { publishEvent } from "./stream-emitter.js";
 import { loadConversationHistory, appendMessage, appendToolCall } from "./db.js";
@@ -48,7 +48,7 @@ const worker = new Worker(
           }]
         }],
         tools: skills,
-        stopWhen: stepCountIs(10),
+        maxSteps: 10,
 
         onStepFinish: async (step) => {
           // Persist completed step to PostgreSQL
