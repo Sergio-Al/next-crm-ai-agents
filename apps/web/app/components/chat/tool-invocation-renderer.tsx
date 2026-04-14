@@ -11,6 +11,7 @@ import { StageUpdateCard } from "./stage-update-card";
 import { SessionPlanCard } from "./session-plan-card";
 import { SessionStatusCard } from "./session-status-card";
 import { OrderFormCard } from "./order-form-card";
+import { OrderStatusCard } from "./order-status-card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 
@@ -89,6 +90,15 @@ export function ToolInvocationRenderer({ part, addToolResult }: Props) {
         />
       );
     }
+    if (toolName === "previewUpdateOrderStatus") {
+      return (
+        <OrderStatusCard
+          args={args}
+          toolCallId={toolCallId}
+          addToolResult={legacyAddToolResult}
+        />
+      );
+    }
 
     // Read tools show loading
     return (
@@ -134,7 +144,8 @@ export function ToolInvocationRenderer({ part, addToolResult }: Props) {
       toolName === "previewCreateDeal" ||
       toolName === "previewUpdateDealStage" ||
       toolName === "previewCreateSession" ||
-      toolName === "previewCreateOrder"
+      toolName === "previewCreateOrder" ||
+      toolName === "previewUpdateOrderStatus"
     ) {
       if (result?.cancelled) {
         return (

@@ -92,6 +92,17 @@
     "confirmButton": "Confirm Move",
     "moving": "Moving..."
   },
+  "orderStatusUpdate": {
+    "title": "Update Order Status",
+    "orderLabel": "Order:",
+    "confirmButton": "Confirm Update",
+    "updating": "Updating...",
+    "status_draft": "Draft",
+    "status_confirmed": "Confirmed",
+    "status_shipped": "Shipped",
+    "status_delivered": "Delivered",
+    "status_cancelled": "Cancelled"
+  },
   "sessionPlan": {
     "title": "Create Agent Session",
     "goalLabel": "Goal",

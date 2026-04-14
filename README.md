@@ -187,6 +187,8 @@ Ask the assistant to work with contacts, deals, products, orders, and pipeline s
 - **AI product suggestions** — *"What products should I recommend to this contact?"*
   - Uses RAG-based semantic search on purchase history to suggest relevant products
 - **Order status** — *"What's the status of order ORD-0001?"*
+- **Update order status** — *"Change this order to confirmed"*, *"Mark order ORD-0018 as shipped"*
+  - A confirmation card shows current → new status before applying; follows strict transitions: `draft → confirmed → shipped → delivered` (cancel from any non-terminal)
 
 All write operations use the **human-in-the-loop (HITL) pattern**: the AI proposes, you review a form card, then confirm or cancel. Nothing is written until you approve.
 
@@ -204,7 +206,7 @@ Every deal, contact, and order detail page includes a **floating AI button** (Sp
 - **Context-specific suggestions** — The prompt chips change based on the resource type:
   - **Deals**: Summarize / Risk assessment / Draft follow-up / Move to next stage / Create nurture session
   - **Contacts**: Summarize / Show their deals / Draft email / Schedule follow-up / Nurture campaign
-  - **Orders**: Summarize order / Suggest products / Check status / Follow up on order
+  - **Orders**: Summarize order / Suggest products / Check status / Update status / Follow up on order
 - **Server-side context** — The client only sends `{ type, id }`. The server fetches the resource from the database and injects it into the system prompt — no sensitive data is passed from the client.
 - **Fresh conversation per session** — Each time you open the sheet, a new conversation thread starts (no history pollution from the main `/chat` page).
 - **Navigable detail pages** — Click any deal card (board or list view) on `/deals` to open its detail page. Click any row on `/contacts` to open the contact detail page. Click any row on `/orders` to open the order detail page. All pages show metadata, related records, and the floating AI chat button.

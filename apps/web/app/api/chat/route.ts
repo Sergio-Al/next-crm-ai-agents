@@ -27,7 +27,7 @@ You have access to tools that interact with the CRM database. Use them when the 
 
 For READ operations (searching, viewing), use the tools directly — results will be shown to the user immediately.
 
-For WRITE operations (creating contacts, creating deals, updating deal stages, creating orders), ALWAYS call the preview tools immediately (previewCreateContact, previewCreateDeal, previewUpdateDealStage, previewCreateOrder). These render rich interactive forms with contact search, stage dropdowns, and validation — the user can fill in any missing fields directly in the form. NEVER generate openui-lang Form components for CRM write operations. Do NOT say you've created something — the user will confirm via the form.
+For WRITE operations (creating contacts, creating deals, updating deal stages, creating orders, updating order status), ALWAYS call the preview tools immediately (previewCreateContact, previewCreateDeal, previewUpdateDealStage, previewCreateOrder, previewUpdateOrderStatus). These render rich interactive forms with contact search, stage dropdowns, and validation — the user can fill in any missing fields directly in the form. NEVER generate openui-lang Form components for CRM write operations. Do NOT say you've created something — the user will confirm via the form.
 
 CRITICAL: When the user asks to create a contact, deal, order, or update a stage, call the appropriate preview tool RIGHT AWAY. Do NOT ask the user for details first. Do NOT list what information you need. Just call the tool immediately with whatever information you have (even if it's nothing) — the form handles the rest. For example, if the user says "create a new deal", call previewCreateDeal immediately with an empty title. Never respond with text asking for fields.
 
@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
           .where(eq(schema.orderItems.orderId, context.id));
 
         const itemList = items.map((i) => `  - ${i.productName} x${i.quantity} = ${i.lineTotal}`).join("\n");
-        systemPrompt += `\n\n## Active Context\nThe user is currently viewing this order:\n- Order ID: ${order.id}\n- Order Number: ${order.number}\n- Status: ${order.status}\n- Total: ${order.totalAmount} ${order.currency ?? "USD"}\n- Contact: ${contactName || "N/A"} (${order.contactEmail ?? "N/A"})\n- Items:\n${itemList}\n\nWhen the user says "this order" they mean "${order.number}" (ID: ${order.id}). Use this context to answer questions. If the user asks for product suggestions, use the contact ID ${order.contactId ?? "N/A"} with suggestProducts.`;
+        systemPrompt += `\n\n## Active Context\nThe user is currently viewing this order:\n- Order ID: ${order.id}\n- Order Number: ${order.number}\n- Status: ${order.status}\n- Total: ${order.totalAmount} ${order.currency ?? "USD"}\n- Contact: ${contactName || "N/A"} (${order.contactEmail ?? "N/A"})\n- Items:\n${itemList}\n\nWhen the user says "this order" they mean "${order.number}" (ID: ${order.id}). Use this context to answer questions and pre-fill tool calls. If the user asks to change the order status, use previewUpdateOrderStatus with the order ID, number, and current status already filled in. If the user asks for product suggestions, use the contact ID ${order.contactId ?? "N/A"} with suggestProducts.`;
       }
     }
   }
@@ -517,6 +517,17 @@ export async function POST(req: NextRequest) {
             quantity: z.number().min(1).describe("Quantity"),
           })).optional().describe("Order line items"),
           notes: z.string().optional().describe("Order notes"),
+        }),
+      }),
+
+      previewUpdateOrderStatus: tool({
+        description:
+          "Preview updating an order's status. Order status flow: draft → confirmed → shipped → delivered. Any non-terminal status can also go to cancelled. Call this when the user wants to change an order's status (confirm, ship, deliver, or cancel an order). The user will confirm the change.",
+        inputSchema: z.object({
+          orderId: z.string().uuid().describe("The order ID to update"),
+          orderNumber: z.string().describe("The order number for display (e.g. ORD-0018)"),
+          currentStatus: z.string().describe("Current order status for display"),
+          newStatus: z.enum(["confirmed", "shipped", "delivered", "cancelled"]).describe("The target status"),
         }),
       }),
 

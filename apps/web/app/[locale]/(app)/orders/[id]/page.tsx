@@ -62,11 +62,11 @@ interface OrderDetail {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-neutral-500/10 text-neutral-400 border-neutral-500/20",
-  confirmed: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  shipped: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  delivered: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  cancelled: "bg-red-500/10 text-red-400 border-red-500/20",
+  draft: "bg-neutral-500/10 text-neutral-600 dark:text-neutral-400 border-neutral-500/20",
+  confirmed: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+  shipped: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+  delivered: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+  cancelled: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20",
 };
 
 function formatCurrency(val: string | null, cur: string | null) {
@@ -95,8 +95,8 @@ export default function OrderDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex-1 bg-neutral-900/60 rounded-[2rem] border border-white/5 relative overflow-hidden overflow-y-auto">
-        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      <div className="flex-1 bg-card rounded-[2rem] border border-border relative overflow-hidden overflow-y-auto">
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
         <div className="p-6 space-y-6">
           <Skeleton className="h-8 w-48" />
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -112,8 +112,8 @@ export default function OrderDetailPage() {
 
   if (!order) {
     return (
-      <div className="flex-1 bg-neutral-900/60 rounded-[2rem] border border-white/5 relative overflow-hidden flex items-center justify-center">
-        <p className="text-neutral-400">{t("notFound")}</p>
+      <div className="flex-1 bg-card rounded-[2rem] border border-border relative overflow-hidden flex items-center justify-center">
+        <p className="text-muted-foreground">{t("notFound")}</p>
       </div>
     );
   }
@@ -123,21 +123,21 @@ export default function OrderDetailPage() {
     : null;
 
   return (
-    <div className="flex-1 bg-neutral-900/60 rounded-[2rem] border border-white/5 relative overflow-hidden overflow-y-auto">
-      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+    <div className="flex-1 bg-card rounded-[2rem] border border-border relative overflow-hidden overflow-y-auto">
+      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex items-start gap-4">
           <Link
             href="/orders"
-            className="mt-1 p-2 rounded-xl hover:bg-neutral-800/60 transition-colors"
+            className="mt-1 p-2 rounded-xl hover:bg-muted transition-colors"
           >
-            <ArrowLeft className="size-5 text-neutral-400" />
+            <ArrowLeft className="size-5 text-muted-foreground" />
           </Link>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap">
               <ShoppingCart className="size-6 text-orange-400 shrink-0" />
-              <h1 className="text-2xl font-bold tracking-tight text-white">
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">
                 {order.number}
               </h1>
               <Badge className={`${STATUS_COLORS[order.status] ?? ""} border`}>
@@ -145,7 +145,7 @@ export default function OrderDetailPage() {
               </Badge>
             </div>
             {order.createdAt && (
-              <p className="text-xs text-neutral-500 mt-1 ml-9">
+              <p className="text-xs text-muted-foreground mt-1 ml-9">
                 {t("created", { date: new Date(order.createdAt).toLocaleDateString() })}
               </p>
             )}
@@ -154,46 +154,46 @@ export default function OrderDetailPage() {
 
         {/* Metadata cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="bg-neutral-800/30 border-white/5">
+          <Card className="bg-muted/50 border-border">
             <CardContent className="p-4 space-y-1">
-              <div className="flex items-center gap-2 text-neutral-400 text-xs">
+              <div className="flex items-center gap-2 text-muted-foreground text-xs">
                 <DollarSign className="size-3.5" />
                 {t("total")}
               </div>
-              <p className="text-xl font-semibold text-white">
+              <p className="text-xl font-semibold text-foreground">
                 {formatCurrency(order.totalAmount, order.currency)}
               </p>
               {order.discountAmount && parseFloat(order.discountAmount) > 0 && (
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-muted-foreground">
                   {t("discount")}: -{formatCurrency(order.discountAmount, order.currency)}
                 </p>
               )}
               {order.taxAmount && parseFloat(order.taxAmount) > 0 && (
-                <p className="text-xs text-neutral-500">
+                <p className="text-xs text-muted-foreground">
                   {t("tax")}: +{formatCurrency(order.taxAmount, order.currency)}
                 </p>
               )}
             </CardContent>
           </Card>
 
-          <Card className="bg-neutral-800/30 border-white/5">
+          <Card className="bg-muted/50 border-border">
             <CardContent className="p-4 space-y-1">
-              <div className="flex items-center gap-2 text-neutral-400 text-xs">
+              <div className="flex items-center gap-2 text-muted-foreground text-xs">
                 <Package className="size-3.5" />
                 {t("items")}
               </div>
-              <p className="text-xl font-semibold text-white">
+              <p className="text-xl font-semibold text-foreground">
                 {order.items.length}
               </p>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-muted-foreground">
                 {t("subtotal")}: {formatCurrency(order.subtotal, order.currency)}
               </p>
             </CardContent>
           </Card>
 
-          <Card className="bg-neutral-800/30 border-white/5">
+          <Card className="bg-muted/50 border-border">
             <CardContent className="p-4 space-y-1">
-              <div className="flex items-center gap-2 text-neutral-400 text-xs">
+              <div className="flex items-center gap-2 text-muted-foreground text-xs">
                 <User className="size-3.5" />
                 {t("contact")}
               </div>
@@ -205,47 +205,47 @@ export default function OrderDetailPage() {
                   {contactName}
                 </Link>
               ) : (
-                <p className="text-xl font-semibold text-neutral-500">
+                <p className="text-xl font-semibold text-muted-foreground">
                   {t("noContact")}
                 </p>
               )}
               {order.contact?.email && (
-                <p className="text-xs text-neutral-500 truncate">
+                <p className="text-xs text-muted-foreground truncate">
                   {order.contact.email}
                 </p>
               )}
             </CardContent>
           </Card>
 
-          <Card className="bg-neutral-800/30 border-white/5">
+          <Card className="bg-muted/50 border-border">
             <CardContent className="p-4 space-y-1">
-              <div className="flex items-center gap-2 text-neutral-400 text-xs">
+              <div className="flex items-center gap-2 text-muted-foreground text-xs">
                 <CalendarDays className="size-3.5" />
                 {t("timeline")}
               </div>
               <div className="space-y-1 text-sm">
                 {order.confirmedAt && (
-                  <p className="text-blue-400">
+                  <p className="text-blue-600 dark:text-blue-400">
                     {t("confirmedAt", { date: new Date(order.confirmedAt).toLocaleDateString() })}
                   </p>
                 )}
                 {order.shippedAt && (
-                  <p className="text-amber-400">
+                  <p className="text-amber-600 dark:text-amber-400">
                     {t("shippedAt", { date: new Date(order.shippedAt).toLocaleDateString() })}
                   </p>
                 )}
                 {order.deliveredAt && (
-                  <p className="text-emerald-400">
+                  <p className="text-emerald-600 dark:text-emerald-400">
                     {t("deliveredAt", { date: new Date(order.deliveredAt).toLocaleDateString() })}
                   </p>
                 )}
                 {order.cancelledAt && (
-                  <p className="text-red-400">
+                  <p className="text-red-600 dark:text-red-400">
                     {t("cancelledAt", { date: new Date(order.cancelledAt).toLocaleDateString() })}
                   </p>
                 )}
                 {!order.confirmedAt && !order.cancelledAt && (
-                  <p className="text-neutral-500">{t("pending")}</p>
+                  <p className="text-muted-foreground">{t("pending")}</p>
                 )}
               </div>
             </CardContent>
@@ -254,8 +254,8 @@ export default function OrderDetailPage() {
 
         {/* Items table */}
         <div>
-          <h2 className="text-lg font-semibold text-white mb-3">{t("orderItems")}</h2>
-          <div className="rounded-2xl border border-white/5 overflow-hidden">
+          <h2 className="text-lg font-semibold text-foreground mb-3">{t("orderItems")}</h2>
+          <div className="rounded-2xl border border-border overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -311,8 +311,8 @@ export default function OrderDetailPage() {
         {/* Notes */}
         {order.notes && (
           <div>
-            <h2 className="text-lg font-semibold text-white mb-2">{t("notes")}</h2>
-            <p className="text-neutral-300 leading-relaxed">{order.notes}</p>
+            <h2 className="text-lg font-semibold text-foreground mb-2">{t("notes")}</h2>
+            <p className="text-muted-foreground leading-relaxed">{order.notes}</p>
           </div>
         )}
       </div>

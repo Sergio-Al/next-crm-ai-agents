@@ -92,6 +92,17 @@
     "confirmButton": "Confirmar Movimiento",
     "moving": "Moviendo..."
   },
+  "orderStatusUpdate": {
+    "title": "Actualizar Estado del Pedido",
+    "orderLabel": "Pedido:",
+    "confirmButton": "Confirmar Actualización",
+    "updating": "Actualizando...",
+    "status_draft": "Borrador",
+    "status_confirmed": "Confirmado",
+    "status_shipped": "Enviado",
+    "status_delivered": "Entregado",
+    "status_cancelled": "Cancelado"
+  },
   "sessionPlan": {
     "title": "Crear Sesión de Agente",
     "goalLabel": "Objetivo",
