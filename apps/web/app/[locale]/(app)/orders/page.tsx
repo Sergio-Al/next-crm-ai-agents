@@ -2,12 +2,13 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useTranslations } from "next-intl";
-import { Search, ShoppingCart, Filter } from "lucide-react";
+import { Search, ShoppingCart, Filter, Plus } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { CreateOrderDialog } from "@/components/create-order-dialog";
 import {
   Table,
   TableBody,
@@ -47,11 +48,11 @@ interface Pagination {
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-neutral-500/10 text-neutral-400 border-neutral-500/20",
-  confirmed: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  shipped: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  delivered: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  cancelled: "bg-red-500/10 text-red-400 border-red-500/20",
+  draft:     "bg-muted text-muted-foreground border-border",
+  confirmed: "bg-info/10 text-info border-info/20",
+  shipped:   "bg-warning/10 text-warning border-warning/20",
+  delivered: "bg-success/10 text-success border-success/20",
+  cancelled: "bg-destructive/10 text-destructive border-destructive/20",
 };
 
 function formatCurrency(val: string | null, cur: string | null) {
@@ -73,6 +74,7 @@ export default function OrdersPage() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [page, setPage] = useState(1);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   const fetchOrders = useCallback(() => {
     setLoading(true);
@@ -94,12 +96,12 @@ export default function OrdersPage() {
   }, [fetchOrders, search]);
 
   return (
-    <div className="flex-1 bg-neutral-900/60 rounded-[2rem] border border-white/5 relative overflow-hidden overflow-y-auto">
-      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+    <div className="flex-1 bg-card rounded-[2rem] border border-border relative overflow-hidden overflow-y-auto">
+      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
       <div className="p-6 space-y-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">{t("title")}</h1>
-          <p className="text-neutral-400 mt-1">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">{t("title")}</h1>
+          <p className="text-muted-foreground mt-1">
             {pagination ? t("totalOrders", { count: pagination.total }) : "\u00A0"}
           </p>
         </div>
@@ -107,10 +109,10 @@ export default function OrdersPage() {
         {/* Filters */}
         <div className="flex items-center gap-3">
           <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-neutral-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
               placeholder={t("searchPlaceholder")}
-              className="pl-9 bg-neutral-800/40 border-white/5"
+              className="pl-9"
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -125,8 +127,8 @@ export default function OrdersPage() {
               setPage(1);
             }}
           >
-            <SelectTrigger className="w-40 bg-neutral-800/40 border-white/5">
-              <Filter className="size-4 mr-2 text-neutral-400" />
+            <SelectTrigger className="w-40">
+              <Filter className="size-4 mr-2 text-muted-foreground" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -138,6 +140,10 @@ export default function OrdersPage() {
               <SelectItem value="cancelled">{t("statusCancelled")}</SelectItem>
             </SelectContent>
           </Select>
+          <Button onClick={() => setShowCreateDialog(true)}>
+            <Plus className="size-4 mr-2" />
+            {t("createOrder")}
+          </Button>
         </div>
 
         {/* Table */}
@@ -148,7 +154,7 @@ export default function OrdersPage() {
             ))}
           </div>
         ) : (
-          <div className="rounded-2xl border border-white/5 overflow-hidden">
+          <div className="rounded-2xl border border-border overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -164,7 +170,7 @@ export default function OrdersPage() {
                 {orders.map((order) => (
                   <TableRow
                     key={order.id}
-                    className="cursor-pointer hover:bg-neutral-800/40"
+                    className="cursor-pointer hover:bg-muted/50"
                     onClick={() => router.push(`/orders/${order.id}`)}
                   >
                     <TableCell>
@@ -247,6 +253,11 @@ export default function OrdersPage() {
           </div>
         )}
       </div>
+      <CreateOrderDialog
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+        onCreated={fetchOrders}
+      />
     </div>
   );
 }

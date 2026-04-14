@@ -1,7 +1,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import type { LanguageModelV1 } from "ai";
+import type { LanguageModelV2 } from '@ai-sdk/provider';
 
 // Registry of provider factories, keyed by provider prefix
 const providers: Record<string, (modelId: string) => LanguageModelV1> = {

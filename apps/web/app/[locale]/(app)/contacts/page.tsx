@@ -66,13 +66,13 @@ export default function ContactsPage() {
   }, [search]);
 
   return (
-    <div className="flex-1 bg-neutral-900/60 rounded-[2rem] border border-white/5 relative overflow-hidden overflow-y-auto">
-      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+    <div className="flex-1 bg-card rounded-[2rem] border border-border relative overflow-hidden overflow-y-auto">
+      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">{t("title")}</h1>
-          <p className="text-neutral-400 mt-1">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">{t("title")}</h1>
+          <p className="text-muted-foreground mt-1">
             {pagination ? t("count", { count: pagination.total }) : tc("loading")}
           </p>
         </div>
@@ -88,7 +88,7 @@ export default function ContactsPage() {
         />
       </div>
 
-      <div className="rounded-2xl border border-white/5 overflow-hidden">
+      <div className="rounded-2xl border border-border overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -116,7 +116,7 @@ export default function ContactsPage() {
                     .join("")
                     .toUpperCase() || "?";
                   return (
-                    <TableRow key={c.id} className="cursor-pointer hover:bg-neutral-800/40" onClick={() => router.push(`/contacts/${c.id}`)}>
+                    <TableRow key={c.id} className="cursor-pointer hover:bg-muted/50" onClick={() => router.push(`/contacts/${c.id}`)}>
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <Avatar className="size-8">

@@ -1,7 +1,8 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { DefaultChatTransport } from "ai";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   MessageSquareDashed,
   Send,
@@ -19,7 +20,7 @@ import {
 } from "lucide-react";
 import { useTranslations, useLocale } from "next-intl";
 import { ChatMessage } from "./chat-message";
-import type { Message } from "ai";
+import type { UIMessage } from "ai";
 
 export interface ChatContext {
   type: "deal" | "contact" | "order";
@@ -84,12 +85,64 @@ export function ChatPanel({
   const [activeConvId, setActiveConvId] = useState<string | null>(
     conversationId ?? null,
   );
-  const [initialMessages, setInitialMessages] = useState<Message[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const titleGenerated = useRef(false);
   const t = useTranslations("chat");
   const tAi = useTranslations("aiChat");
   const locale = useLocale();
+
+  const [input, setInput] = useState('');
+  const activeConvIdRef = useRef(activeConvId);
+  activeConvIdRef.current = activeConvId;
+
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: "/api/chat",
+        body: () => ({
+          conversationId: activeConvIdRef.current,
+          locale,
+          ...(context ? { context: { type: context.type, id: context.id } } : {}),
+        }),
+        fetch: async (url: string | URL | Request, init?: RequestInit) => {
+          const response = await globalThis.fetch(url, init);
+          const convId = response.headers.get("X-Conversation-Id");
+          if (convId && !activeConvIdRef.current) {
+            setActiveConvId(convId);
+            onConversationCreated?.(convId);
+          }
+          return response;
+        },
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [locale, context?.type, context?.id],
+  );
+
+  const {
+    messages,
+    setMessages,
+    sendMessage,
+    status,
+    stop,
+    addToolResult,
+  } = useChat({
+    id: conversationId ?? "new",
+    transport,
+    onFinish: () => {
+      // Generate title after first exchange
+      if (activeConvIdRef.current && !titleGenerated.current && messages.length >= 1) {
+        titleGenerated.current = true;
+        const firstUserMsg = messages.find((m) => m.role === "user");
+        if (firstUserMsg) {
+          const text = firstUserMsg.parts
+            .filter((p): p is { type: "text"; text: string } => p.type === "text")
+            .map((p) => p.text)
+            .join("");
+          generateTitle(activeConvIdRef.current, text);
+        }
+      }
+    },
+  });
 
   // Load history when conversationId changes
   useEffect(() => {
@@ -100,62 +153,37 @@ export function ChatPanel({
       fetch(`/api/conversations/${conversationId}`)
         .then((r) => r.json())
         .then((data) => {
-          setInitialMessages(data.data ?? []);
+          setMessages(data.data ?? []);
         })
-        .catch(() => setInitialMessages([]))
+        .catch(() => setMessages([]))
         .finally(() => setLoadingHistory(false));
     } else {
       setActiveConvId(null);
-      setInitialMessages([]);
+      setMessages([]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
-  const {
-    messages,
-    input,
-    handleInputChange,
-    handleSubmit,
-    status,
-    stop,
-    append,
-    addToolResult,
-  } = useChat({
-    api: "/api/chat",
-    body: {
-      conversationId: activeConvId,
-      locale,
-      ...(context ? { context: { type: context.type, id: context.id } } : {}),
+  const handleSubmit = useCallback(
+    (e?: { preventDefault?: () => void }) => {
+      e?.preventDefault?.();
+      const text = input.trim();
+      if (!text) return;
+      setInput("");
+      sendMessage({ text });
     },
-    initialMessages,
-    key: conversationId ?? "new",
-    onResponse: (response) => {
-      const convId = response.headers.get("X-Conversation-Id");
-      if (convId && !activeConvId) {
-        setActiveConvId(convId);
-        onConversationCreated?.(convId);
-      }
-    },
-    onFinish: () => {
-      // Generate title after first exchange
-      if (activeConvId && !titleGenerated.current && messages.length >= 1) {
-        titleGenerated.current = true;
-        const firstUserMsg = messages.find((m) => m.role === "user");
-        if (firstUserMsg) {
-          generateTitle(activeConvId, firstUserMsg.content);
-        }
-      }
-    },
-  });
+    [input, sendMessage],
+  );
 
   const handleAction = useCallback(
     (event: { type: string; params: Record<string, any>; humanFriendlyMessage: string; formState?: Record<string, any> }) => {
       if (event.type === "continue_conversation") {
-        append({ role: "user", content: event.humanFriendlyMessage });
+        sendMessage({ text: event.humanFriendlyMessage });
       } else if (event.type === "open_url" && event.params.url) {
         window.open(event.params.url, "_blank", "noopener");
       }
     },
-    [append],
+    [sendMessage],
   );
 
   const activeSuggestions = context
@@ -169,11 +197,9 @@ export function ChatPanel({
   const handleSuggestionClick = useCallback(
     (promptKey: string) => {
       const prompt = context ? tAi(promptKey as any) : t(promptKey as any);
-      handleInputChange({
-        target: { value: prompt },
-      } as React.ChangeEvent<HTMLInputElement>);
+      setInput(prompt);
     },
-    [handleInputChange, t, tAi, context],
+    [t, tAi, context],
   );
 
   const isLoading = status === "streaming" || status === "submitted";
@@ -186,30 +212,29 @@ export function ChatPanel({
   }, [messages]);
 
   return (
-    <div className={`flex flex-col h-full bg-neutral-900/60 ${compact ? "rounded-none border-0" : "rounded-[2rem] border border-white/5"} relative overflow-hidden shadow-2xl shadow-black/50`}>
+    <div className={`flex flex-col h-full bg-card ${compact ? "rounded-none border-0" : "rounded-[2rem] border border-border"} relative overflow-hidden`}>
       {/* Radial glow background */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-neutral-800/20 via-neutral-900/0 to-transparent pointer-events-none" />
-
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-sidebar-accent/30 via-transparent to-transparent pointer-events-none" />
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto flex flex-col items-center p-8 relative z-10"
       >
         {loadingHistory ? (
-          <div className="flex-1 flex items-center justify-center text-neutral-500">
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
             <span className="animate-pulse">{t("loadingConversation")}</span>
           </div>
         ) : messages.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center w-full">
-            <div className="w-16 h-16 rounded-3xl bg-neutral-800/50 border border-white/5 flex items-center justify-center mb-6 shadow-inner shadow-white/5">
+            <div className="w-16 h-16 rounded-3xl bg-muted border border-border flex items-center justify-center mb-6">
               <MessageSquareDashed
                 strokeWidth={1.5}
-                className="size-8 text-neutral-400"
+                className="size-8 text-muted-foreground"
               />
             </div>
-            <h1 className="text-3xl font-medium tracking-tight text-white mb-3 text-center">
+            <h1 className="text-3xl font-medium tracking-tight text-foreground mb-3 text-center">
               {t("heading")}
             </h1>
-            <p className="text-base text-neutral-400 mb-10 text-center max-w-md">
+            <p className="text-base text-muted-foreground mb-10 text-center max-w-md">
               {t("description")}
             </p>
 
@@ -219,20 +244,20 @@ export function ChatPanel({
                 <button
                   key={tag.key}
                   onClick={() => handleSuggestionClick(tag.promptKey)}
-                  className="flex flex-col items-start p-4 rounded-2xl bg-neutral-800/30 border border-white/5 hover:bg-neutral-800/60 hover:border-white/10 transition-all duration-300 group text-left relative overflow-hidden"
+                  className="flex flex-col items-start p-4 rounded-2xl bg-muted/40 border border-border hover:bg-muted hover:border-border/80 transition-all duration-300 group text-left relative overflow-hidden"
                 >
                   <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 rounded-xl bg-neutral-900 border border-white/5 group-hover:scale-105 transition-transform duration-300">
+                    <div className="p-2 rounded-xl bg-background border border-border group-hover:scale-105 transition-transform duration-300">
                       <tag.icon
                         strokeWidth={1.5}
-                        className={`size-4 ${tag.accent ? "text-orange-400" : "text-neutral-300"}`}
+                        className={`size-4 ${tag.accent ? "text-primary" : "text-muted-foreground"}`}
                       />
                     </div>
-                    <span className="text-base font-medium text-neutral-200 tracking-tight group-hover:text-white transition-colors">
+                    <span className="text-base font-medium text-secondary-foreground tracking-tight group-hover:text-foreground transition-colors">
                       {context ? tAi(tag.key as any) : t(tag.key as any)}
                     </span>
                   </div>
-                  <span className="text-sm text-neutral-500 group-hover:text-neutral-400 transition-colors pl-11">
+                  <span className="text-sm text-muted-foreground group-hover:text-muted-foreground/80 transition-colors pl-11">
                     {context ? tAi(tag.descKey as any) : t(tag.descKey as any)}
                   </span>
                 </button>
@@ -245,6 +270,7 @@ export function ChatPanel({
               <ChatMessage
                 key={message.id}
                 message={message}
+                compact={compact}
                 isStreaming={isLoading && idx === messages.length - 1 && message.role === "assistant"}
                 addToolResult={addToolResult}
                 onAction={handleAction}
@@ -252,31 +278,30 @@ export function ChatPanel({
             ))}
             {isLoading &&
               messages[messages.length - 1]?.role !== "assistant" && (
-                <div className="flex items-center gap-2 text-neutral-500 text-sm">
+                <div className="flex items-center gap-2 text-muted-foreground text-sm">
                   <span className="animate-pulse">{t("thinking")}</span>
                 </div>
               )}
           </div>
         )}
       </div>
-
       {/* Input Area */}
       <div className="p-6 pt-0 w-full max-w-5xl mx-auto relative z-10">
         <form onSubmit={handleSubmit}>
-          <div className="relative flex items-end bg-[#0a0a0a]/80 backdrop-blur-xl border border-white/10 rounded-3xl p-2 pl-5 focus-within:border-white/20 focus-within:ring-4 focus-within:ring-white/5 transition-all shadow-lg shadow-black/20">
+          <div className="relative flex items-end bg-input border border-border rounded-3xl p-2 pl-5 focus-within:border-ring focus-within:ring-4 focus-within:ring-ring/10 transition-all">
             <input
               value={input}
-              onChange={handleInputChange}
+              onChange={e => setInput(e.target.value)}
               placeholder={t("inputPlaceholder")}
               disabled={isLoading}
-              className="flex-1 bg-transparent border-none outline-none text-base text-neutral-100 placeholder-neutral-500 py-3 resize-none"
+              className="flex-1 bg-transparent border-none outline-none text-base text-foreground placeholder:text-muted-foreground py-3 resize-none"
             />
             <div className="flex items-center gap-2 pb-1 pr-1 pl-3">
               {isLoading ? (
                 <button
                   type="button"
                   onClick={stop}
-                  className="bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white p-2.5 rounded-2xl transition-all duration-300 flex-shrink-0 border border-red-500/20"
+                  className="bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground p-2.5 rounded-2xl transition-all duration-300 flex-shrink-0 border border-destructive/20"
                 >
                   <Square className="size-5" />
                 </button>
@@ -284,7 +309,7 @@ export function ChatPanel({
                 <button
                   type="submit"
                   disabled={!input.trim()}
-                  className="bg-orange-500/10 text-orange-500 hover:bg-orange-500 hover:text-white p-2.5 rounded-2xl transition-all duration-300 flex-shrink-0 border border-orange-500/20 group disabled:opacity-30 disabled:pointer-events-none"
+                  className="bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground p-2.5 rounded-2xl transition-all duration-300 flex-shrink-0 border border-primary/20 group disabled:opacity-30 disabled:pointer-events-none"
                 >
                   <Send
                     strokeWidth={1.5}
@@ -296,7 +321,7 @@ export function ChatPanel({
           </div>
         </form>
         <div className="text-center mt-3">
-          <span className="text-xs text-neutral-600">
+          <span className="text-xs text-muted-foreground/60">
             {t("disclaimer")}
           </span>
         </div>

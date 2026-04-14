@@ -32,12 +32,12 @@ interface AgentSession {
 }
 
 const STATUS_CONFIG: Record<string, { labelKey: string; color: string; bg: string; dot: string }> = {
-  running:       { labelKey: "statusRunning",   color: "text-emerald-400", bg: "bg-emerald-500/10", dot: "bg-emerald-400" },
-  paused:        { labelKey: "statusPaused",    color: "text-yellow-400",  bg: "bg-yellow-500/10",  dot: "bg-yellow-400" },
-  waiting_human: { labelKey: "statusWaiting",   color: "text-blue-400",    bg: "bg-blue-500/10",    dot: "bg-blue-400" },
-  completed:     { labelKey: "statusCompleted", color: "text-neutral-400", bg: "bg-neutral-500/10", dot: "bg-neutral-500" },
-  failed:        { labelKey: "statusFailed",    color: "text-red-400",     bg: "bg-red-500/10",     dot: "bg-red-400" },
-  cancelled:     { labelKey: "statusCancelled", color: "text-neutral-500", bg: "bg-neutral-500/10", dot: "bg-neutral-600" },
+  running:       { labelKey: "statusRunning",   color: "text-success",          bg: "bg-success/10",      dot: "bg-success" },
+  paused:        { labelKey: "statusPaused",    color: "text-warning",          bg: "bg-warning/10",      dot: "bg-warning" },
+  waiting_human: { labelKey: "statusWaiting",   color: "text-info",             bg: "bg-info/10",         dot: "bg-info" },
+  completed:     { labelKey: "statusCompleted", color: "text-muted-foreground", bg: "bg-muted",           dot: "bg-muted-foreground" },
+  failed:        { labelKey: "statusFailed",    color: "text-destructive",      bg: "bg-destructive/10",  dot: "bg-destructive" },
+  cancelled:     { labelKey: "statusCancelled", color: "text-muted-foreground", bg: "bg-muted",           dot: "bg-muted-foreground" },
 };
 
 const STEP_ICONS: Record<string, typeof Zap> = {
@@ -88,8 +88,8 @@ export default function SessionsPage() {
 
   if (loading) {
     return (
-      <div className="flex-1 bg-neutral-900/60 rounded-[2rem] border border-white/5 relative overflow-hidden overflow-y-auto">
-        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      <div className="flex-1 bg-card rounded-[2rem] border border-border relative overflow-hidden overflow-y-auto">
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
         <div className="p-8 space-y-4">
           <Skeleton className="h-6 w-36" />
           {Array.from({ length: 5 }).map((_, i) => (
@@ -104,25 +104,25 @@ export default function SessionsPage() {
   const pastSessions = sessions.filter((s) => ["completed", "cancelled", "failed"].includes(s.status));
 
   return (
-    <div className="flex-1 bg-neutral-900/60 rounded-[2rem] border border-white/5 relative overflow-hidden overflow-y-auto">
-      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+    <div className="flex-1 bg-card rounded-[2rem] border border-border relative overflow-hidden overflow-y-auto">
+      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
 
       <div className="p-8 max-w-5xl space-y-6">
         {/* Header */}
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-white">{t("title")}</h1>
-          <p className="text-sm text-neutral-500 mt-1">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">{t("title")}</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             {sessions.length} {sessions.length !== 1 ? t("title").toLowerCase() : t("title").toLowerCase()} · {activeSessions.length} {t("active").toLowerCase()}
           </p>
         </div>
 
         {sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="p-3 rounded-xl bg-neutral-800/50 border border-white/5 mb-4">
-              <Zap className="size-6 text-neutral-600" />
+            <div className="p-3 rounded-xl bg-muted border border-border mb-4">
+              <Zap className="size-6 text-muted-foreground" />
             </div>
-            <p className="text-sm text-neutral-400 mb-1">{t("noSessions")}</p>
-            <p className="text-xs text-neutral-600">
+            <p className="text-sm text-muted-foreground mb-1">{t("noSessions")}</p>
+            <p className="text-xs text-muted-foreground/60">
               {t("noSessionsHint")}
             </p>
           </div>
@@ -131,10 +131,10 @@ export default function SessionsPage() {
             {/* Active sessions */}
             {activeSessions.length > 0 && (
               <div className="space-y-2">
-                <h2 className="text-xs font-medium text-neutral-500 uppercase tracking-wider px-1">
+                <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-1">
                   {t("active")}
                 </h2>
-                <div className="rounded-xl border border-white/5 bg-neutral-800/30 divide-y divide-white/5 overflow-hidden">
+                <div className="rounded-xl border border-border bg-muted/30 divide-y divide-border overflow-hidden">
                   {activeSessions.map((s) => (
                     <SessionRow key={s.id} session={s} onAction={handleAction} />
                   ))}
@@ -145,10 +145,10 @@ export default function SessionsPage() {
             {/* Past sessions */}
             {pastSessions.length > 0 && (
               <div className="space-y-2">
-                <h2 className="text-xs font-medium text-neutral-500 uppercase tracking-wider px-1">
+                <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-1">
                   {t("statusCompleted")}
                 </h2>
-                <div className="rounded-xl border border-white/5 bg-neutral-800/30 divide-y divide-white/5 overflow-hidden">
+                <div className="rounded-xl border border-border bg-muted/30 divide-y divide-border overflow-hidden">
                   {pastSessions.map((s) => (
                     <SessionRow key={s.id} session={s} onAction={handleAction} />
                   ))}
@@ -184,14 +184,14 @@ function SessionRow({
   return (
     <Link
       href={`/sessions/${s.id}`}
-      className="flex items-center gap-4 px-4 py-3.5 hover:bg-white/[0.02] transition-colors group"
+      className="flex items-center gap-4 px-4 py-3.5 hover:bg-muted/50 transition-colors group"
     >
       {/* Status icon */}
       <div className={`p-2 rounded-lg ${statusCfg.bg} shrink-0`}>
         {s.status === "completed" ? (
-          <CheckCircle2 className="size-4 text-neutral-400" />
+          <CheckCircle2 className="size-4 text-muted-foreground" />
         ) : s.status === "failed" ? (
-          <XCircle className="size-4 text-red-400" />
+          <XCircle className="size-4 text-destructive" />
         ) : (
           <StepIcon className={`size-4 ${statusCfg.color}`} />
         )}
@@ -200,7 +200,7 @@ function SessionRow({
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-neutral-200 truncate group-hover:text-white transition-colors">
+          <span className="text-sm font-medium text-foreground truncate group-hover:text-foreground/80 transition-colors">
             {s.goal}
           </span>
         </div>
@@ -209,11 +209,11 @@ function SessionRow({
             <span className={`size-1.5 rounded-full ${statusCfg.dot} ${s.status === "running" ? "animate-pulse" : ""}`} />
             {t(statusCfg.labelKey as any)}
           </span>
-          <span className="text-xs text-neutral-600">
+          <span className="text-xs text-muted-foreground/60">
             {t("step", { current: Math.min(s.currentStepIndex + 1, totalSteps), total: totalSteps })}
           </span>
           {s.updatedAt && (
-            <span className="text-xs text-neutral-600">
+            <span className="text-xs text-muted-foreground/60">
               {formatRelativeTime(s.updatedAt)}
             </span>
           )}
@@ -222,13 +222,13 @@ function SessionRow({
 
       {/* Progress bar (small) */}
       <div className="w-20 shrink-0 hidden sm:block">
-        <div className="h-1 rounded-full bg-neutral-800 overflow-hidden">
+        <div className="h-1 rounded-full bg-border overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all ${isTerminal ? "bg-neutral-600" : "bg-primary"}`}
+            className={`h-full rounded-full transition-all ${isTerminal ? "bg-muted-foreground/40" : "bg-primary"}`}
             style={{ width: `${progress}%` }}
           />
         </div>
-        <span className="text-xs text-neutral-600 mt-0.5 block text-right">{progress}%</span>
+        <span className="text-xs text-muted-foreground/60 mt-0.5 block text-right">{progress}%</span>
       </div>
 
       {/* Actions */}
@@ -237,7 +237,7 @@ function SessionRow({
           <Button
             size="icon"
             variant="ghost"
-            className="size-7 text-neutral-500 hover:text-yellow-400"
+            className="size-7 text-muted-foreground hover:text-warning"
             onClick={(e) => onAction(e, s.id, "pause")}
             title="Pause"
           >
@@ -248,7 +248,7 @@ function SessionRow({
           <Button
             size="icon"
             variant="ghost"
-            className="size-7 text-neutral-500 hover:text-emerald-400"
+            className="size-7 text-muted-foreground hover:text-success"
             onClick={(e) => onAction(e, s.id, "resume")}
             title="Resume"
           >
@@ -259,14 +259,14 @@ function SessionRow({
           <Button
             size="icon"
             variant="ghost"
-            className="size-7 text-neutral-500 hover:text-red-400"
+            className="size-7 text-muted-foreground hover:text-destructive"
             onClick={(e) => onAction(e, s.id, "cancel")}
             title="Cancel"
           >
             <XCircle className="size-3.5" />
           </Button>
         )}
-        <ChevronRight className="size-4 text-neutral-700 group-hover:text-neutral-500 transition-colors" />
+        <ChevronRight className="size-4 text-muted-foreground/30 group-hover:text-muted-foreground transition-colors" />
       </div>
     </Link>
   );

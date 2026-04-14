@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { streamText, tool } from "ai";
+import { streamText, tool, stepCountIs, convertToModelMessages, type UIMessage } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
-import { z } from "zod";
+import { z } from 'zod';
 import { readFileSync } from "fs";
 import path from "path";
 import { getDb } from "@/lib/db";
@@ -55,7 +55,7 @@ ${CRM_INSTRUCTIONS}`;
  */
 export async function POST(req: NextRequest) {
   const { messages, conversationId: existingConvId, locale, context } = (await req.json()) as {
-    messages?: Array<{ role: string; content: string }>;
+    messages?: UIMessage[];
     conversationId?: string;
     locale?: string;
     context?: { type: string; id: string };
@@ -78,7 +78,11 @@ export async function POST(req: NextRequest) {
   // Save the latest user message
   const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
   if (lastUserMsg) {
-    await saveMessage(conversationId, "user", lastUserMsg.content);
+    const text = lastUserMsg.parts
+      .filter((p): p is { type: "text"; text: string } => p.type === "text")
+      .map((p) => p.text)
+      .join("");
+    await saveMessage(conversationId, "user", text);
   }
 
   const db = getDb();
@@ -164,16 +168,16 @@ export async function POST(req: NextRequest) {
   const result = streamText({
     model: openai(model),
     system: systemPrompt,
-    messages: messages as Array<{
-      role: "user" | "assistant" | "system";
-      content: string;
-    }>,
-    maxSteps: 5,
+
+    messages: await convertToModelMessages(messages),
+
+    stopWhen: stepCountIs(5),
+
     tools: {
       searchContacts: tool({
         description:
           "Search CRM contacts by name, email, or company. Returns matching contacts.",
-        parameters: z.object({
+        inputSchema: z.object({
           query: z
             .string()
             .describe("Search term to match against name, email, or company"),
@@ -207,7 +211,7 @@ export async function POST(req: NextRequest) {
       getContact: tool({
         description:
           "Get detailed info for a specific contact by ID, including their deals.",
-        parameters: z.object({
+        inputSchema: z.object({
           contactId: z.string().uuid().describe("The contact ID"),
         }),
         execute: async ({ contactId }) => {
@@ -238,7 +242,7 @@ export async function POST(req: NextRequest) {
       searchDeals: tool({
         description:
           "Search deals by title or filter by status. Returns matching deals with stage info.",
-        parameters: z.object({
+        inputSchema: z.object({
           query: z.string().optional().describe("Search term for deal title"),
           status: z
             .enum(["open", "won", "lost"])
@@ -292,7 +296,7 @@ export async function POST(req: NextRequest) {
       listPipelineStages: tool({
         description:
           "List all pipeline stages with their IDs. Use this to get stage IDs for creating/moving deals.",
-        parameters: z.object({}),
+        inputSchema: z.object({}),
         execute: async () => {
           const stages = await db
             .select({
@@ -312,7 +316,7 @@ export async function POST(req: NextRequest) {
       previewCreateContact: tool({
         description:
           "Preview creating a new contact. Call this immediately when the user wants to create a contact — the form lets them fill in details. Do NOT ask for fields first.",
-        parameters: z.object({
+        inputSchema: z.object({
           firstName: z.string().optional().describe("First name if known"),
           lastName: z.string().optional().describe("Last name if known"),
           email: z.string().optional().describe("Email address"),
@@ -325,7 +329,7 @@ export async function POST(req: NextRequest) {
       previewCreateDeal: tool({
         description:
           "Preview creating a new deal. Call this immediately when the user wants to create a deal — the form lets them fill in details. Do NOT ask for fields first.",
-        parameters: z.object({
+        inputSchema: z.object({
           title: z.string().optional().describe("Deal title if known"),
           value: z.string().optional().describe("Deal value as a number string"),
           contactId: z
@@ -344,7 +348,7 @@ export async function POST(req: NextRequest) {
       previewUpdateDealStage: tool({
         description:
           "Preview moving a deal to a different pipeline stage. The user will confirm the change.",
-        parameters: z.object({
+        inputSchema: z.object({
           dealId: z.string().uuid().describe("The deal ID to update"),
           dealTitle: z.string().describe("The deal title for display"),
           currentStage: z
@@ -358,13 +362,13 @@ export async function POST(req: NextRequest) {
       previewCreateSession: tool({
         description:
           "Preview creating an agent session — a background multi-step plan (follow-ups, reminders, nurture sequences). The user will review the plan and confirm before it runs. Each step has a type: crm_action, notify, wait, ai_reason, or human_checkpoint.",
-        parameters: z.object({
+        inputSchema: z.object({
           goal: z.string().describe("The overall goal of the session"),
           steps: z.array(
             z.object({
               type: z.enum(["crm_action", "notify", "wait", "ai_reason", "human_checkpoint"]).describe("Step type"),
               description: z.string().describe("What this step does"),
-              config: z.record(z.unknown()).optional().describe("Step-specific config (e.g. { duration: '3d' } for wait, { action: 'create_activity' } for crm_action)"),
+              config: z.record(z.string(), z.unknown()).optional().describe("Step-specific config (e.g. { duration: '3d' } for wait, { action: 'create_activity' } for crm_action)"),
             }),
           ).describe("The ordered list of steps in the plan"),
         }),
@@ -373,7 +377,7 @@ export async function POST(req: NextRequest) {
       getSessionStatus: tool({
         description:
           "Get the current status of an agent session, including goal, progress, and recent events.",
-        parameters: z.object({
+        inputSchema: z.object({
           sessionId: z.string().uuid().describe("The agent session ID"),
         }),
         execute: async ({ sessionId }) => {
@@ -407,7 +411,7 @@ export async function POST(req: NextRequest) {
       searchProducts: tool({
         description:
           "Search the product catalog by name, SKU, category, or tags. Returns matching active products.",
-        parameters: z.object({
+        inputSchema: z.object({
           query: z.string().optional().describe("Search term for product name, SKU, or description"),
           category: z.string().optional().describe("Filter by category"),
         }),
@@ -445,7 +449,7 @@ export async function POST(req: NextRequest) {
       getOrderHistory: tool({
         description:
           "Get order history for a contact. Returns their recent orders with items.",
-        parameters: z.object({
+        inputSchema: z.object({
           contactId: z.string().uuid().describe("The contact ID to get order history for"),
           limit: z.number().optional().describe("Max orders to return (default 10)"),
         }),
@@ -486,7 +490,7 @@ export async function POST(req: NextRequest) {
       suggestProducts: tool({
         description:
           "Get AI-powered product suggestions for a contact based on their purchase history. Uses semantic search on the product catalog.",
-        parameters: z.object({
+        inputSchema: z.object({
           contactId: z.string().uuid().describe("The contact ID to get suggestions for"),
         }),
         execute: async ({ contactId }) => {
@@ -506,7 +510,7 @@ export async function POST(req: NextRequest) {
       previewCreateOrder: tool({
         description:
           "Preview creating a new order. Call this immediately when the user wants to create an order — the form lets them fill in details. Do NOT ask for fields first.",
-        parameters: z.object({
+        inputSchema: z.object({
           contactId: z.string().uuid().optional().describe("Contact ID for the order"),
           items: z.array(z.object({
             productId: z.string().uuid().describe("Product ID"),
@@ -519,7 +523,7 @@ export async function POST(req: NextRequest) {
       getOrderStatus: tool({
         description:
           "Get the current status and details of a specific order.",
-        parameters: z.object({
+        inputSchema: z.object({
           orderId: z.string().uuid().describe("The order ID"),
         }),
         execute: async ({ orderId }) => {
@@ -562,21 +566,22 @@ export async function POST(req: NextRequest) {
         },
       }),
     },
+
     onFinish: async ({ text, usage }) => {
       if (text) {
         await saveMessage(conversationId!, "assistant", text, {
           model,
-          tokensIn: usage?.promptTokens,
-          tokensOut: usage?.completionTokens,
+          tokensIn: usage?.inputTokens,
+          tokensOut: usage?.outputTokens,
         });
       }
       await touchConversation(conversationId!);
-    },
+    }
   });
 
-  return result.toDataStreamResponse({
+  return result.toUIMessageStreamResponse({
     headers: { "X-Conversation-Id": conversationId },
-    getErrorMessage: (error) => {
+    onError: (error) => {
       console.error("[api/chat] stream error:", error);
 
       if (process.env.NODE_ENV !== "production") {

@@ -1,5 +1,5 @@
 import type { CoreTool } from "ai";
-import { z } from "zod";
+import { z } from "zod/v3";
 
 /**
  * Load skill/tool definitions for a workspace.
@@ -19,7 +19,7 @@ export async function loadSkills(
     // Built-in search tool
     search_contacts: {
       description: "Search for contacts in the CRM by name, email, or phone",
-      parameters: z.object({
+      inputSchema: z.object({
         query: z.string().describe("Search query (name, email, or phone)"),
         limit: z
           .number()
@@ -41,7 +41,7 @@ export async function loadSkills(
     // Built-in deal lookup tool
     get_deal: {
       description: "Get details of a specific deal by its ID",
-      parameters: z.object({
+      inputSchema: z.object({
         dealId: z.string().uuid().describe("The deal UUID"),
       }),
       execute: async ({ dealId }) => {
@@ -57,7 +57,7 @@ export async function loadSkills(
     log_activity: {
       description:
         "Log a CRM activity (call, email, meeting, note) for a contact or deal",
-      parameters: z.object({
+      inputSchema: z.object({
         type: z.enum(["call", "email", "meeting", "note", "task"]),
         subject: z.string().describe("Activity subject/title"),
         body: z.string().optional().describe("Activity details"),

@@ -54,19 +54,19 @@ export function ConversationSidebar({
   };
 
   return (
-    <aside className="w-80 flex-shrink-0 bg-neutral-900/40 rounded-[2rem] border border-white/5 flex-col p-4 hidden lg:flex relative overflow-hidden">
+    <aside className="w-80 flex-shrink-0 bg-sidebar rounded-[2rem] border border-sidebar-border flex-col p-4 hidden lg:flex relative overflow-hidden">
       {/* Subtle top glow */}
-      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-sidebar-border to-transparent" />
 
       <div className="flex items-center justify-between mb-6 mt-1 px-2">
-        <button className="text-neutral-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/5">
+        <button className="text-muted-foreground hover:text-sidebar-foreground transition-colors p-1 rounded-lg hover:bg-sidebar-accent">
           <PanelLeft strokeWidth={1.5} className="size-5" />
         </button>
       </div>
 
       <button
         onClick={onNewChat}
-        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-neutral-100 text-neutral-900 hover:bg-white rounded-2xl text-base font-medium transition-all shadow-sm shadow-white/5 active:scale-[0.98] mb-6"
+        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-foreground text-background hover:opacity-90 rounded-2xl text-base font-medium transition-all shadow-sm active:scale-[0.98] mb-6"
       >
         <Plus strokeWidth={1.5} className="size-4" />
         {t("newChat")}
@@ -74,13 +74,13 @@ export function ConversationSidebar({
 
       <div className="flex-1 overflow-y-auto space-y-1 pr-2 -mr-2">
         {loading ? (
-          <div className="p-4 text-center text-xs text-neutral-500">
+          <div className="p-4 text-center text-xs text-muted-foreground">
             {t("loading")}
           </div>
         ) : conversations.length === 0 ? (
           <div className="p-4 text-center">
-            <MessageSquare className="size-6 mx-auto mb-2 text-neutral-600" />
-            <p className="text-xs text-neutral-500">{t("empty")}</p>
+            <MessageSquare className="size-6 mx-auto mb-2 text-muted-foreground" />
+            <p className="text-xs text-muted-foreground">{t("empty")}</p>
           </div>
         ) : (
           conversations.map((c) => (
@@ -90,16 +90,16 @@ export function ConversationSidebar({
               className={cn(
                 "w-full text-left p-3 rounded-2xl transition-all group",
                 activeId === c.id
-                  ? "bg-white/5 border border-white/5"
-                  : "hover:bg-white/5 border border-transparent hover:border-white/5",
+                  ? "bg-sidebar-accent border border-sidebar-border"
+                  : "hover:bg-sidebar-accent/50 border border-transparent hover:border-sidebar-border",
               )}
             >
               <h4
                 className={cn(
                   "text-base font-medium mb-1 truncate transition-colors",
                   activeId === c.id
-                    ? "text-neutral-100"
-                    : "text-neutral-400 group-hover:text-neutral-200",
+                    ? "text-sidebar-foreground"
+                    : "text-muted-foreground group-hover:text-sidebar-foreground",
                 )}
               >
                 {c.title}
@@ -108,8 +108,8 @@ export function ConversationSidebar({
                 className={cn(
                   "text-xs transition-colors",
                   activeId === c.id
-                    ? "text-neutral-500"
-                    : "text-neutral-600 group-hover:text-neutral-500",
+                    ? "text-muted-foreground"
+                    : "text-muted-foreground/60 group-hover:text-muted-foreground",
                 )}
               >
                 {formatTime(c.updatedAt ?? c.createdAt)} &middot;{" "}

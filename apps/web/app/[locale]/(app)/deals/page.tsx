@@ -70,10 +70,10 @@ export default function DealsPage() {
 
   if (loading) {
     return (
-      <div className="flex-1 bg-neutral-900/60 rounded-[2rem] border border-white/5 relative overflow-hidden overflow-y-auto">
-        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      <div className="flex-1 bg-card rounded-[2rem] border border-border relative overflow-hidden overflow-y-auto">
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
       <div className="p-6 space-y-4">
-        <h1 className="text-2xl font-bold tracking-tight text-white">{t("title")}</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">{t("title")}</h1>
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-64 rounded-2xl" />
@@ -90,12 +90,12 @@ export default function DealsPage() {
   }));
 
   return (
-    <div className="flex-1 bg-neutral-900/60 rounded-[2rem] border border-white/5 relative overflow-hidden overflow-y-auto">
-      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+    <div className="flex-1 bg-card rounded-[2rem] border border-border relative overflow-hidden overflow-y-auto">
+      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
     <div className="p-6 space-y-4">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-white">{t("title")}</h1>
-        <p className="text-neutral-400 mt-1">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">{t("title")}</h1>
+        <p className="text-muted-foreground mt-1">
           {t("activeDeals", { count: deals.length })}
         </p>
       </div>
@@ -111,7 +111,7 @@ export default function DealsPage() {
             {dealsByStage.map((stage) => (
               <div
                 key={stage.id}
-                className="flex-shrink-0 w-72 rounded-2xl border border-white/5 bg-neutral-800/30"
+                className="flex-shrink-0 w-72 rounded-2xl border border-border bg-muted/30"
               >
                 <div className="p-3 border-b">
                   <div className="flex items-center justify-between">
@@ -127,7 +127,7 @@ export default function DealsPage() {
                 <div className="p-2 space-y-2 min-h-[8rem]">
                   {stage.deals.map((deal) => (
                     <Link key={deal.id} href={`/deals/${deal.id}`} className="block">
-                    <Card className="shadow-sm hover:bg-neutral-800/40 transition-colors cursor-pointer">
+                    <Card className="shadow-sm hover:bg-muted/50 transition-colors cursor-pointer">
                       <CardContent className="p-3 space-y-2">
                         <p className="font-medium text-sm leading-tight">
                           {deal.title}
@@ -158,7 +158,7 @@ export default function DealsPage() {
         </TabsContent>
 
         <TabsContent value="list" className="mt-4">
-          <div className="rounded-2xl border border-white/5 overflow-hidden">
+          <div className="rounded-2xl border border-border overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -174,7 +174,7 @@ export default function DealsPage() {
                   const stageName =
                     stages.find((s) => s.id === deal.stageId)?.name ?? "—";
                   return (
-                    <TableRow key={deal.id} className="cursor-pointer hover:bg-neutral-800/40">
+                    <TableRow key={deal.id} className="cursor-pointer hover:bg-muted/50">
                       <TableCell>
                         <Link href={`/deals/${deal.id}`} className="flex items-center gap-2">
                           <Handshake className="size-4 text-primary shrink-0" />

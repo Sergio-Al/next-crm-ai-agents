@@ -154,7 +154,7 @@ export const agentConfigs = pgTable("agent_configs", {
   temperature: decimal("temperature", { precision: 3, scale: 2 }).default(
     "0.7",
   ),
-  maxTokens: integer("max_tokens").default(4096),
+  maxOutputTokens: integer("max_tokens").default(4096),
   maxSteps: integer("max_steps").default(10),
   isDefault: boolean("is_default").default(false),
   enabled: boolean("enabled").default(true),

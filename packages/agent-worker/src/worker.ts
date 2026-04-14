@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
 import { Redis } from "ioredis";
-import { streamText } from "ai";
+import { streamText, stepCountIs } from "ai";
 import { createProvider } from "./llm-client.js";
 import { publishEvent } from "./stream-emitter.js";
 import { loadConversationHistory, appendMessage, appendToolCall } from "./db.js";
@@ -39,9 +39,17 @@ const worker = new Worker(
       const DEFAULT_MODEL = process.env.DEFAULT_MODEL ?? "openai/gpt-4o";
       const result = streamText({
         model: createProvider(model ?? DEFAULT_MODEL),
-        messages: [...history, { role: "user" as const, content: message }],
+        messages: [...history, {
+          role: "user" as const,
+
+          parts: [{
+            type: 'text',
+            text: message
+          }]
+        }],
         tools: skills,
-        maxSteps: 10,
+        stopWhen: stepCountIs(10),
+
         onStepFinish: async (step) => {
           // Persist completed step to PostgreSQL
           if (step.text) {
@@ -49,8 +57,8 @@ const worker = new Worker(
               role: "assistant",
               content: step.text,
               model: model ?? DEFAULT_MODEL,
-              tokensIn: step.usage?.promptTokens,
-              tokensOut: step.usage?.completionTokens,
+              tokensIn: step.usage?.inputTokens,
+              tokensOut: step.usage?.outputTokens,
             });
           }
 
@@ -68,7 +76,7 @@ const worker = new Worker(
               });
             }
           }
-        },
+        }
       });
 
       // Stream text deltas + tool events to Redis for gateway fan-out

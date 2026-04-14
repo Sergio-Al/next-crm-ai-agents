@@ -211,7 +211,7 @@ export function startSessionWorker() {
               model: createProvider(model),
               system: `You are an AI assistant executing a multi-step plan. The overall goal is: "${session.goal}". You are at step ${stepIndex + 1} of ${plan.length}. The step instruction is: "${step.description}". Based on the accumulated context, decide what to do next and provide your reasoning and any output.`,
               prompt: `Accumulated context so far:\n${JSON.stringify(ctx, null, 2)}\n\nProvide your reasoning and output for this step.`,
-              maxTokens: 1024,
+              maxOutputTokens: 1024,
             });
 
             ctx[`step_${stepIndex}_reasoning`] = text;
@@ -219,7 +219,7 @@ export function startSessionWorker() {
               sessionId,
               stepIndex,
               type: "ai_reasoning",
-              data: { reasoning: text },
+              data: { reasoningText: text },
             });
             await updateSession(sessionId, { context: ctx });
             await enqueueNextStep(queue, sessionId, stepIndex + 1);

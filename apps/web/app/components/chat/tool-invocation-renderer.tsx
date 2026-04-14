@@ -1,6 +1,6 @@
 "use client";
 
-import type { ToolInvocation } from "ai";
+import { getToolName, type ToolUIPart, type DynamicToolUIPart } from "ai";
 import { useTranslations } from "next-intl";
 import { ContactListCard } from "./contact-list-card";
 import { ContactDetailCard } from "./contact-detail-card";
@@ -10,28 +10,36 @@ import { DealFormCard } from "./deal-form-card";
 import { StageUpdateCard } from "./stage-update-card";
 import { SessionPlanCard } from "./session-plan-card";
 import { SessionStatusCard } from "./session-status-card";
+import { OrderFormCard } from "./order-form-card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 
 interface Props {
-  toolInvocation: ToolInvocation;
-  addToolResult: (args: { toolCallId: string; result: unknown }) => void;
+  part: ToolUIPart | DynamicToolUIPart;
+  addToolResult: (args: { tool: string; toolCallId: string; output: unknown }) => void;
 }
 
-export function ToolInvocationRenderer({ toolInvocation, addToolResult }: Props) {
+export function ToolInvocationRenderer({ part, addToolResult }: Props) {
   const t = useTranslations("toolRenderer");
-  const { toolName, toolCallId, state } = toolInvocation;
-  const args = (toolInvocation.args ?? {}) as Record<string, any>;
+  const toolName = getToolName(part);
+  const { toolCallId, state } = part;
+  const args = ((part as any).input ?? {}) as Record<string, any>;
+
+  // Wrapper that translates the old { toolCallId, result } API to the new v6 API
+  // so form card components don't need to change.
+  const legacyAddToolResult = ({ toolCallId: id, result }: { toolCallId: string; result: unknown }) => {
+    addToolResult({ tool: toolName, toolCallId: id, output: result });
+  };
 
   // Loading state for read tools
-  if (state === "call" || state === "partial-call") {
+  if (state === "input-available" || state === "input-streaming") {
     // Write tools render forms
     if (toolName === "previewCreateContact") {
       return (
         <ContactFormCard
           args={args}
           toolCallId={toolCallId}
-          addToolResult={addToolResult}
+          addToolResult={legacyAddToolResult}
         />
       );
     }
@@ -40,7 +48,7 @@ export function ToolInvocationRenderer({ toolInvocation, addToolResult }: Props)
         <DealFormCard
           args={args}
           toolCallId={toolCallId}
-          addToolResult={addToolResult}
+          addToolResult={legacyAddToolResult}
         />
       );
     }
@@ -49,7 +57,7 @@ export function ToolInvocationRenderer({ toolInvocation, addToolResult }: Props)
         <StageUpdateCard
           args={args}
           toolCallId={toolCallId}
-          addToolResult={addToolResult}
+          addToolResult={legacyAddToolResult}
         />
       );
     }
@@ -58,7 +66,16 @@ export function ToolInvocationRenderer({ toolInvocation, addToolResult }: Props)
         <SessionPlanCard
           args={args}
           toolCallId={toolCallId}
-          addToolResult={addToolResult}
+          addToolResult={legacyAddToolResult}
+        />
+      );
+    }
+    if (toolName === "previewCreateOrder") {
+      return (
+        <OrderFormCard
+          args={args}
+          toolCallId={toolCallId}
+          addToolResult={legacyAddToolResult}
         />
       );
     }
@@ -73,8 +90,8 @@ export function ToolInvocationRenderer({ toolInvocation, addToolResult }: Props)
   }
 
   // Result state — render appropriate card
-  if (state === "result") {
-    const result = toolInvocation.result;
+  if (state === "output-available") {
+    const result = (part as any).output;
 
     if (toolName === "searchContacts" && result?.contacts) {
       return <ContactListCard contacts={result.contacts} />;
@@ -106,7 +123,8 @@ export function ToolInvocationRenderer({ toolInvocation, addToolResult }: Props)
       toolName === "previewCreateContact" ||
       toolName === "previewCreateDeal" ||
       toolName === "previewUpdateDealStage" ||
-      toolName === "previewCreateSession"
+      toolName === "previewCreateSession" ||
+      toolName === "previewCreateOrder"
     ) {
       if (result?.cancelled) {
         return (
@@ -122,12 +140,8 @@ export function ToolInvocationRenderer({ toolInvocation, addToolResult }: Props)
       );
     }
 
-    // Fallback
-    return (
-      <pre className="overflow-x-auto rounded-md border bg-background/50 p-3 text-xs text-muted-foreground">
-        {JSON.stringify(result, null, 2)}
-      </pre>
-    );
+    // Fallback — hide raw results; the AI renders them via OpenUI text.
+    return null;
   }
 
   return null;

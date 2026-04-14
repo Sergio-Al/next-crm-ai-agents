@@ -15,7 +15,7 @@
     "dash": "—"
   },
   "nav": {
-    "brand": "CRM Agent",
+    "brand": "HANSA CRM | EXO",
     "navigation": "Navigation",
     "dashboard": "Dashboard",
     "contacts": "Contacts",
@@ -358,7 +358,8 @@
     "noOrders": "No orders found",
     "showing": "Showing {from}–{to} of {total}",
     "prev": "Previous",
-    "next": "Next"
+    "next": "Next",
+    "createOrder": "New Order"
   },
   "orderDetail": {
     "notFound": "Order not found.",
@@ -390,5 +391,20 @@
     "headerLineTotal": "Line Total",
     "noItems": "No items in this order",
     "notes": "Notes"
+  },
+  "orderForm": {
+    "title": "Create Order",
+    "fieldContact": "Contact",
+    "contactPlaceholder": "Search contacts...",
+    "searching": "Searching...",
+    "noContacts": "No contacts found",
+    "fieldItems": "Items",
+    "addProductPlaceholder": "Add a product...",
+    "noProducts": "No products found",
+    "subtotal": "Subtotal",
+    "fieldNotes": "Notes",
+    "notesPlaceholder": "Optional notes...",
+    "createButton": "Create Order",
+    "creating": "Creating..."
   }
 }

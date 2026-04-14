@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { streamText, tool } from "ai";
+import { streamText, tool, stepCountIs } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
-import { z } from "zod";
+import { z } from 'zod';
 import { readFileSync } from "fs";
 import path from "path";
 import { getDb } from "@/lib/db";
@@ -116,13 +116,14 @@ export async function POST(req: NextRequest) {
     model: openai(model),
     system: systemPrompt,
     messages: messagesForLLM as any,
-    maxSteps: 3,
+    stopWhen: stepCountIs(3),
+
     tools: {
       // Only read tools for the continuation — write tools shouldn't trigger again here
       searchContacts: tool({
         description:
           "Search CRM contacts by name, email, or company. Returns matching contacts.",
-        parameters: z.object({
+        inputSchema: z.object({
           query: z.string().describe("Search term to match against name, email, or company"),
         }),
         execute: async ({ query }) => {
@@ -154,7 +155,7 @@ export async function POST(req: NextRequest) {
       getContact: tool({
         description:
           "Get detailed info for a specific contact by ID, including their deals.",
-        parameters: z.object({
+        inputSchema: z.object({
           contactId: z.string().uuid().describe("The contact ID"),
         }),
         execute: async ({ contactId }) => {
@@ -185,7 +186,7 @@ export async function POST(req: NextRequest) {
       searchDeals: tool({
         description:
           "Search deals by title or filter by status. Returns matching deals with stage info.",
-        parameters: z.object({
+        inputSchema: z.object({
           query: z.string().optional().describe("Search term for deal title"),
           status: z
             .enum(["open", "won", "lost"])
@@ -235,7 +236,7 @@ export async function POST(req: NextRequest) {
       listPipelineStages: tool({
         description:
           "List all pipeline stages with their IDs.",
-        parameters: z.object({}),
+        inputSchema: z.object({}),
         execute: async () => {
           const stages = await db
             .select({
@@ -254,7 +255,7 @@ export async function POST(req: NextRequest) {
       getSessionStatus: tool({
         description:
           "Get the current status of an agent session, including goal, progress, and recent events.",
-        parameters: z.object({
+        inputSchema: z.object({
           sessionId: z.string().uuid().describe("The agent session ID"),
         }),
         execute: async ({ sessionId }) => {
@@ -283,16 +284,17 @@ export async function POST(req: NextRequest) {
         },
       }),
     },
+
     onFinish: async ({ text, usage }) => {
       if (text) {
         await saveMessage(conversationId, "assistant", text, {
           model,
-          tokensIn: usage?.promptTokens,
-          tokensOut: usage?.completionTokens,
+          tokensIn: usage?.inputTokens,
+          tokensOut: usage?.outputTokens,
         });
       }
       await touchConversation(conversationId);
-    },
+    }
   });
 
   // Stream plain text only
@@ -302,7 +304,7 @@ export async function POST(req: NextRequest) {
       try {
         for await (const part of streamResult.fullStream) {
           if (part.type === "text-delta") {
-            controller.enqueue(encoder.encode(part.textDelta));
+            controller.enqueue(encoder.encode(part.text));
           }
         }
       } catch (err) {

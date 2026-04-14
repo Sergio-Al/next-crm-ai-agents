@@ -1,4 +1,5 @@
-import type { Message } from "ai";
+import type { UIMessage } from "ai";
+import { isToolUIPart } from "ai";
 import { Component, type ReactNode } from "react";
 import { Bot, User } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -25,35 +26,59 @@ class PartErrorBoundary extends Component<
   }
 }
 
+// Strip ```openui ... ``` code fences if present, return the inner content
+function stripOpenUIFence(text: string): string {
+  const fenceMatch = text.match(/^```openui\s*\n([\s\S]*?)(?:\n```\s*)?$/m);
+  if (fenceMatch) return fenceMatch[1];
+  // Also handle partial streaming where closing fence hasn't arrived yet
+  const openFence = text.match(/^```openui\s*\n([\s\S]*)$/m);
+  if (openFence) return openFence[1];
+  return text;
+}
+
 // Heuristic check: does the text look like openui-lang (starts with an assignment)?
 function looksLikeOpenUI(text: string): boolean {
-  const trimmed = text.trimStart();
+  const trimmed = stripOpenUIFence(text).trimStart();
   // openui-lang starts with identifier = Expression (e.g. "root = Card(...)")
   return /^[a-zA-Z_]\w*\s*=\s*/.test(trimmed);
 }
 
+// Detect raw JSON blobs that should be hidden in assistant messages.
+// Must work during streaming when JSON is still incomplete.
+function looksLikeRawJSON(text: string): boolean {
+  let trimmed = text.trim();
+  // Strip markdown code fences (```json ... ``` or ``` ... ```)
+  const fenced = trimmed.match(/^```(?:json)?\s*\n([\s\S]*?)(?:\n```\s*)?$/m);
+  if (fenced) trimmed = fenced[1].trim();
+  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return false;
+  // Check for JSON-like structure: looks like key-value pairs with quoted keys
+  // This catches both complete and streaming (partial) JSON
+  return /^\{\s*"[^"]+"\s*:/.test(trimmed) || /^\[\s*\{/.test(trimmed);
+}
+
 interface ChatMessageProps {
-  message: Message;
+  message: UIMessage;
   isStreaming?: boolean;
-  addToolResult?: (args: { toolCallId: string; result: unknown }) => void;
+  compact?: boolean;
+  addToolResult?: (args: { tool: string; toolCallId: string; output: unknown }) => void;
   onAction?: (event: { type: string; params: Record<string, any>; humanFriendlyMessage: string; formState?: Record<string, any> }) => void;
 }
 
-export function ChatMessage({ message, isStreaming, addToolResult, onAction }: ChatMessageProps) {
+export function ChatMessage({ message, isStreaming, compact, addToolResult, onAction }: ChatMessageProps) {
   const isUser = message.role === "user";
   const t = useTranslations("toolRenderer");
 
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
-      <Avatar className="size-8 shrink-0">
+      <Avatar className={`${compact ? "size-6" : "size-8"} shrink-0`}>
         <AvatarFallback
           className={isUser ? "bg-primary text-primary-foreground" : "bg-muted"}
         >
-          {isUser ? <User className="size-4" /> : <Bot className="size-4" />}
+          {isUser ? <User className={compact ? "size-3" : "size-4"} /> : <Bot className={compact ? "size-3" : "size-4"} />}
         </AvatarFallback>
       </Avatar>
       <div
-        className={`max-w-[80%] rounded-lg px-4 py-2.5 text-sm ${
+        className={`max-w-[80%] rounded-lg px-4 py-2.5 ${compact ? "text-xs" : "text-sm"} ${
           isUser
             ? "bg-primary text-primary-foreground"
             : "bg-muted text-foreground"
@@ -62,6 +87,10 @@ export function ChatMessage({ message, isStreaming, addToolResult, onAction }: C
         {message.parts?.map((part, i) => {
           if (part.type === "text") {
             if (!part.text?.trim()) return null;
+            // Always hide raw JSON blobs in assistant messages
+            if (!isUser && looksLikeRawJSON(part.text)) {
+              return null;
+            }
             if (isUser) {
               return (
                 <p key={i} className="whitespace-pre-wrap leading-relaxed">
@@ -71,6 +100,7 @@ export function ChatMessage({ message, isStreaming, addToolResult, onAction }: C
             }
             // Try OpenUI renderer for openui-lang, fall back to plain text
             if (looksLikeOpenUI(part.text)) {
+              const openUISource = stripOpenUIFence(part.text);
               return (
                 <PartErrorBoundary
                   key={i}
@@ -82,7 +112,7 @@ export function ChatMessage({ message, isStreaming, addToolResult, onAction }: C
                 >
                   <Renderer
                     library={openuiChatLibrary}
-                    response={part.text}
+                    response={openUISource}
                     isStreaming={isStreaming ?? false}
                     onAction={onAction}
                   />
@@ -95,7 +125,7 @@ export function ChatMessage({ message, isStreaming, addToolResult, onAction }: C
               </p>
             );
           }
-          if (part.type === "tool-invocation" && addToolResult) {
+          if (isToolUIPart(part) && addToolResult) {
             return (
               <div key={i} className="mt-2 -mx-2">
                 <PartErrorBoundary
@@ -107,7 +137,7 @@ export function ChatMessage({ message, isStreaming, addToolResult, onAction }: C
                   }
                 >
                   <ToolInvocationRenderer
-                    toolInvocation={part.toolInvocation}
+                    part={part}
                     addToolResult={addToolResult}
                   />
                 </PartErrorBoundary>
@@ -115,9 +145,7 @@ export function ChatMessage({ message, isStreaming, addToolResult, onAction }: C
             );
           }
           return null;
-        }) ?? (
-          <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
-        )}
+        })}
       </div>
     </div>
   );

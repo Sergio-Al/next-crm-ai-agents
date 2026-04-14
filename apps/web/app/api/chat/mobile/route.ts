@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { streamText, tool } from "ai";
+import { streamText, tool, stepCountIs, convertToModelMessages, type UIMessage } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
-import { z } from "zod";
+import { z } from 'zod';
 import { readFileSync } from "fs";
 import path from "path";
 import { getDb } from "@/lib/db";
@@ -65,7 +65,7 @@ const WRITE_TOOLS = new Set([
  */
 export async function POST(req: NextRequest) {
   const { messages, conversationId: existingConvId, locale } = (await req.json()) as {
-    messages?: Array<{ role: string; content: string }>;
+    messages?: UIMessage[];
     conversationId?: string;
     locale?: string;
   };
@@ -79,7 +79,13 @@ export async function POST(req: NextRequest) {
 
   // Server-side payload guardrail: reject oversized message payloads
   const totalChars = messages.reduce(
-    (sum: number, m: { content?: string }) => sum + (m.content?.length ?? 0),
+    (sum: number, m: UIMessage) => {
+      const text = m.parts
+        .filter((p): p is { type: "text"; text: string } => p.type === "text")
+        .map((p) => p.text)
+        .join("");
+      return sum + text.length;
+    },
     0,
   );
   const MAX_PAYLOAD_CHARS = 120_000; // ~30k tokens
@@ -100,7 +106,11 @@ export async function POST(req: NextRequest) {
 
   const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
   if (lastUserMsg) {
-    await saveMessage(conversationId, "user", lastUserMsg.content);
+    const text = lastUserMsg.parts
+      .filter((p): p is { type: "text"; text: string } => p.type === "text")
+      .map((p) => p.text)
+      .join("");
+    await saveMessage(conversationId, "user", text);
   }
 
   const db = getDb();
@@ -114,16 +124,16 @@ export async function POST(req: NextRequest) {
   const result = streamText({
     model: openai(model),
     system: systemPrompt,
-    messages: messages as Array<{
-      role: "user" | "assistant" | "system";
-      content: string;
-    }>,
-    maxSteps: 5,
+
+    messages: await convertToModelMessages(messages),
+
+    stopWhen: stepCountIs(5),
+
     tools: {
       searchContacts: tool({
         description:
           "Search CRM contacts by name, email, or company. Returns matching contacts.",
-        parameters: z.object({
+        inputSchema: z.object({
           query: z
             .string()
             .describe("Search term to match against name, email, or company"),
@@ -157,7 +167,7 @@ export async function POST(req: NextRequest) {
       getContact: tool({
         description:
           "Get detailed info for a specific contact by ID, including their deals.",
-        parameters: z.object({
+        inputSchema: z.object({
           contactId: z.string().uuid().describe("The contact ID"),
         }),
         execute: async ({ contactId }) => {
@@ -188,7 +198,7 @@ export async function POST(req: NextRequest) {
       searchDeals: tool({
         description:
           "Search deals by title or filter by status. Returns matching deals with stage info.",
-        parameters: z.object({
+        inputSchema: z.object({
           query: z.string().optional().describe("Search term for deal title"),
           status: z
             .enum(["open", "won", "lost"])
@@ -242,7 +252,7 @@ export async function POST(req: NextRequest) {
       listPipelineStages: tool({
         description:
           "List all pipeline stages with their IDs. Use this to get stage IDs for creating/moving deals.",
-        parameters: z.object({}),
+        inputSchema: z.object({}),
         execute: async () => {
           const stages = await db
             .select({
@@ -261,7 +271,7 @@ export async function POST(req: NextRequest) {
       previewCreateContact: tool({
         description:
           "Preview creating a new contact. Call this immediately when the user wants to create a contact — the form lets them fill in details. Do NOT ask for fields first.",
-        parameters: z.object({
+        inputSchema: z.object({
           firstName: z.string().optional().describe("First name if known"),
           lastName: z.string().optional().describe("Last name if known"),
           email: z.string().optional().describe("Email address"),
@@ -274,7 +284,7 @@ export async function POST(req: NextRequest) {
       previewCreateDeal: tool({
         description:
           "Preview creating a new deal. Call this immediately when the user wants to create a deal — the form lets them fill in details. Do NOT ask for fields first.",
-        parameters: z.object({
+        inputSchema: z.object({
           title: z.string().optional().describe("Deal title if known"),
           value: z.string().optional().describe("Deal value as a number string"),
           contactId: z
@@ -293,7 +303,7 @@ export async function POST(req: NextRequest) {
       previewUpdateDealStage: tool({
         description:
           "Preview moving a deal to a different pipeline stage. The user will confirm the change.",
-        parameters: z.object({
+        inputSchema: z.object({
           dealId: z.string().uuid().describe("The deal ID to update"),
           dealTitle: z.string().describe("The deal title for display"),
           currentStage: z.string().describe("Current stage name for display"),
@@ -305,7 +315,7 @@ export async function POST(req: NextRequest) {
       previewCreateSession: tool({
         description:
           "Preview creating an agent session — a background multi-step plan (follow-ups, reminders, nurture sequences). The user will review the plan and confirm before it runs. Each step has a type: crm_action, notify, wait, ai_reason, or human_checkpoint.",
-        parameters: z.object({
+        inputSchema: z.object({
           goal: z.string().describe("The overall goal of the session"),
           steps: z
             .array(
@@ -315,7 +325,7 @@ export async function POST(req: NextRequest) {
                   .describe("Step type"),
                 description: z.string().describe("What this step does"),
                 config: z
-                  .record(z.unknown())
+                  .record(z.string(), z.unknown())
                   .optional()
                   .describe("Step-specific config"),
               }),
@@ -327,7 +337,7 @@ export async function POST(req: NextRequest) {
       getSessionStatus: tool({
         description:
           "Get the current status of an agent session, including goal, progress, and recent events.",
-        parameters: z.object({
+        inputSchema: z.object({
           sessionId: z.string().uuid().describe("The agent session ID"),
         }),
         execute: async ({ sessionId }) => {
@@ -356,16 +366,17 @@ export async function POST(req: NextRequest) {
         },
       }),
     },
+
     onFinish: async ({ text, usage }) => {
       if (text) {
         await saveMessage(conversationId!, "assistant", text, {
           model,
-          tokensIn: usage?.promptTokens,
-          tokensOut: usage?.completionTokens,
+          tokensIn: usage?.inputTokens,
+          tokensOut: usage?.outputTokens,
         });
       }
       await touchConversation(conversationId!);
-    },
+    }
   });
 
   // Stream plain text to the client, intercepting write tool calls
@@ -375,13 +386,13 @@ export async function POST(req: NextRequest) {
       try {
         for await (const part of result.fullStream) {
           if (part.type === "text-delta") {
-            controller.enqueue(encoder.encode(part.textDelta));
+            controller.enqueue(encoder.encode(part.text));
           } else if (part.type === "tool-call" && WRITE_TOOLS.has(part.toolName)) {
             // Write tool detected — emit pending action and stop
             const payload = JSON.stringify({
               action: part.toolName,
               toolCallId: part.toolCallId,
-              args: part.args,
+              args: part.input,
             });
             controller.enqueue(encoder.encode(PENDING_ACTION_DELIMITER + payload));
             break;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { sql } from "drizzle-orm";
+import { sql, inArray } from "drizzle-orm";
 import * as schema from "@crm-agent/shared/db/schema";
 
 export async function GET(req: NextRequest) {
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
         count: sql<number>`count(*)::int`,
       })
       .from(schema.orderItems)
-      .where(sql`${schema.orderItems.orderId} = any(${orderIds})`)
+      .where(inArray(schema.orderItems.orderId, orderIds))
       .groupBy(schema.orderItems.orderId);
     itemCounts = Object.fromEntries(counts.map((c) => [c.orderId, c.count]));
   }

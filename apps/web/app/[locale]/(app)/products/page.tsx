@@ -78,13 +78,13 @@ export default function ProductsPage() {
   }, [search]);
 
   return (
-    <div className="flex-1 bg-neutral-900/60 rounded-[2rem] border border-white/5 relative overflow-hidden overflow-y-auto">
-      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+    <div className="flex-1 bg-card rounded-[2rem] border border-border relative overflow-hidden overflow-y-auto">
+      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
       <div className="p-6 space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">{t("title")}</h1>
-            <p className="text-neutral-400 mt-1">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">{t("title")}</h1>
+            <p className="text-muted-foreground mt-1">
               {pagination ? t("count", { count: pagination.total }) : tc("loading")}
             </p>
           </div>
@@ -100,7 +100,7 @@ export default function ProductsPage() {
           />
         </div>
 
-        <div className="rounded-2xl border border-white/5 overflow-hidden">
+        <div className="rounded-2xl border border-border overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -125,8 +125,8 @@ export default function ProductsPage() {
                 ))
               ) : products.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-neutral-400 py-8">
-                    <Package className="mx-auto size-8 mb-2 text-neutral-600" />
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    <Package className="mx-auto size-8 mb-2 text-muted-foreground/40" />
                     {t("noProducts")}
                   </TableCell>
                 </TableRow>
@@ -134,26 +134,26 @@ export default function ProductsPage() {
                 products.map((product) => (
                   <TableRow
                     key={product.id}
-                    className="cursor-pointer hover:bg-white/5"
+                    className="cursor-pointer hover:bg-muted/50"
                     onClick={() => router.push(`/products/${product.id}` as any)}
                   >
-                    <TableCell className="font-medium text-white">
+                    <TableCell className="font-medium text-foreground">
                       {product.name}
                     </TableCell>
-                    <TableCell className="text-neutral-400 font-mono text-sm">
+                    <TableCell className="text-muted-foreground font-mono text-sm">
                       {product.sku ?? "—"}
                     </TableCell>
                     <TableCell>
                       {product.category ? (
                         <Badge variant="outline" className="text-xs">{product.category}</Badge>
                       ) : (
-                        <span className="text-neutral-500">—</span>
+                        <span className="text-muted-foreground/60">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-white">
+                    <TableCell className="text-foreground">
                       {formatCurrency(product.price, product.currency)}
                     </TableCell>
-                    <TableCell className="text-neutral-400">
+                    <TableCell className="text-muted-foreground">
                       {product.stockQty !== null ? product.stockQty : "∞"}
                     </TableCell>
                     <TableCell>
@@ -161,8 +161,8 @@ export default function ProductsPage() {
                         variant="outline"
                         className={
                           product.active
-                            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                            : "bg-red-500/10 text-red-400 border-red-500/20"
+                            ? "bg-success/10 text-success border-success/20"
+                            : "bg-destructive/10 text-destructive border-destructive/20"
                         }
                       >
                         {product.active ? t("active") : t("inactive")}
@@ -177,7 +177,7 @@ export default function ProductsPage() {
 
         {pagination && pagination.pages > 1 && (
           <div className="flex items-center justify-between">
-            <p className="text-sm text-neutral-400">
+            <p className="text-sm text-muted-foreground">
               {tc("page", { page: pagination.page, pages: pagination.pages })}
             </p>
             <div className="flex gap-2">

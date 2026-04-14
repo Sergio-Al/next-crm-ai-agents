@@ -14,6 +14,7 @@ import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 import { LanguageSwitcher } from "./language-switcher";
+import { ThemeToggle } from "./theme-toggle";
 
 const navItems = [
   { key: "dashboard" as const, href: "/dashboard" as const, icon: LayoutDashboard },
@@ -31,24 +32,24 @@ export function AppSidebar() {
   const t = useTranslations("nav");
 
   return (
-    <aside className="w-64 flex-shrink-0 bg-neutral-900/40 rounded-[2rem] border border-white/5 flex-col p-4 hidden md:flex relative overflow-hidden">
+    <aside className="w-64 flex-shrink-0 bg-sidebar rounded-[2rem] border border-sidebar-border flex-col p-4 hidden md:flex relative overflow-hidden">
       {/* Subtle top glow */}
-      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-sidebar-border to-transparent" />
 
       {/* Logo */}
       <div className="flex items-center gap-3 px-2 mb-8 mt-2">
         <Link href="/dashboard" className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-orange-400 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/20">
-            <span className="text-white font-medium text-base">C</span>
+          <div className="w-8 h-8 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
+            <span className="text-primary-foreground font-medium text-base">C</span>
           </div>
-          <span className="font-medium text-base text-neutral-100 tracking-tight">
+          <span className="font-medium text-base text-sidebar-foreground tracking-tight">
             {t("brand")}
           </span>
         </Link>
       </div>
 
       <div className="px-2 mb-2">
-        <span className="text-xs font-medium text-neutral-500 uppercase tracking-widest">
+        <span className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
           {t("navigation")}
         </span>
       </div>
@@ -65,20 +66,20 @@ export function AppSidebar() {
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-xl text-base transition-all group relative overflow-hidden",
                 isActive
-                  ? "text-neutral-100 bg-white/10 shadow-sm border border-white/5"
-                  : "text-neutral-400 hover:text-neutral-100 hover:bg-white/5 border border-transparent",
+                  ? "text-sidebar-foreground bg-sidebar-accent shadow-sm border border-sidebar-border"
+                  : "text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent/50 border border-transparent",
               )}
             >
               {isActive && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-orange-500 rounded-r-full" />
+                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-sidebar-primary rounded-r-full" />
               )}
               <item.icon
                 strokeWidth={1.5}
                 className={cn(
                   "size-5 transition-transform",
                   isActive
-                    ? "text-orange-400"
-                    : "text-neutral-500 group-hover:text-neutral-300 group-hover:scale-110",
+                    ? "text-sidebar-primary"
+                    : "text-muted-foreground group-hover:text-sidebar-foreground group-hover:scale-110",
                 )}
               />
               <span>{t(item.key)}</span>
@@ -87,14 +88,17 @@ export function AppSidebar() {
         })}
       </nav>
 
-      <div className="mt-auto pt-4 border-t border-white/5 flex items-center justify-between px-2">
+      <div className="mt-auto pt-4 border-t border-sidebar-border flex items-center justify-between px-2">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-neutral-800 border border-white/10 flex items-center justify-center text-sm font-medium">
+          <div className="w-8 h-8 rounded-full bg-sidebar-accent border border-sidebar-border flex items-center justify-center text-sm font-medium text-sidebar-foreground">
             N
           </div>
-          <span className="text-sm text-neutral-400">v0.1.0</span>
+          <span className="text-sm text-muted-foreground">v0.1.0</span>
         </div>
-        <LanguageSwitcher />
+        <div className="flex items-center gap-1.5">
+          <ThemeToggle />
+          <LanguageSwitcher />
+        </div>
       </div>
     </aside>
   );

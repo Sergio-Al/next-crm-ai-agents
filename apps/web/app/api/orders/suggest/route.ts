@@ -175,7 +175,7 @@ export async function POST(req: NextRequest) {
   if (candidateProducts.length === 0) {
     return NextResponse.json({
       suggestions: [],
-      reasoning: "No products available in the catalog.",
+      reasoningText: "No products available in the catalog.",
     });
   }
 
@@ -197,33 +197,36 @@ ${profileText}
 ## Candidate Products
 ${candidateList}
 
-Return a JSON array of objects with: { "productId": "<id>", "productName": "<name>", "reason": "<specific reason>" }
+Return a JSON array of objects with: { "index": <number from the list>, "reason": "<specific reason>" }
 Return at most ${maxSuggestions} products. Only return the JSON array, no other text.`,
   });
 
-  // Parse LLM response
-  let suggestions: Array<{ productId: string; productName: string; reason: string }> = [];
+  // Parse LLM response — the LLM returns indexes, we map to real product IDs
+  let suggestions: Array<{ productId: string; productName: string; reason: string; price: string | null; currency: string | null; category: string | null; similarity: number | null }> = [];
   try {
     const cleaned = text.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
-    suggestions = JSON.parse(cleaned);
+    const raw: Array<{ index: number; reason: string }> = JSON.parse(cleaned);
+    suggestions = raw
+      .map((s) => {
+        const product = candidateProducts[s.index - 1]; // 1-based index
+        if (!product) return null;
+        return {
+          productId: product.id,
+          productName: product.name,
+          reason: s.reason,
+          price: product.price,
+          currency: product.currency ?? null,
+          category: product.category ?? null,
+          similarity: "similarity" in product ? (product.similarity as number) : null,
+        };
+      })
+      .filter(Boolean) as typeof suggestions;
   } catch {
     suggestions = [];
   }
 
-  // Enrich with product data
-  const enriched = suggestions.map((s) => {
-    const product = candidateProducts.find((p) => p.id === s.productId);
-    return {
-      ...s,
-      price: product?.price ?? null,
-      currency: product?.currency ?? null,
-      category: product?.category ?? null,
-      similarity: product && "similarity" in product ? product.similarity : null,
-    };
-  });
-
   return NextResponse.json({
-    suggestions: enriched,
+    suggestions,
     profileSummary: profileText,
     orderCount: orders.length,
   });

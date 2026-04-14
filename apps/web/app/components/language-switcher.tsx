@@ -11,7 +11,7 @@ export function LanguageSwitcher() {
   const pathname = usePathname();
 
   return (
-    <div className="flex items-center gap-1 rounded-lg bg-neutral-800/50 border border-white/5 p-0.5">
+    <div className="flex items-center gap-1 rounded-lg bg-sidebar-accent border border-sidebar-border p-0.5">
       {routing.locales.map((loc) => (
         <button
           key={loc}
@@ -19,8 +19,8 @@ export function LanguageSwitcher() {
           className={cn(
             "px-2.5 py-1 text-xs font-medium rounded-md transition-all uppercase",
             loc === locale
-              ? "bg-white/10 text-neutral-100 shadow-sm"
-              : "text-neutral-500 hover:text-neutral-300"
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-sidebar-foreground"
           )}
         >
           {loc}

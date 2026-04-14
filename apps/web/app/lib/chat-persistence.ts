@@ -46,7 +46,8 @@ export async function loadConversationMessages(conversationId: string) {
     id: r.id,
     role: r.role as "user" | "assistant" | "system",
     content: r.content ?? "",
-    ...(r.parts ? { parts: r.parts } : {}),
+    parts: (r.parts as unknown[]) ??
+      (r.content ? [{ type: "text" as const, text: r.content }] : []),
   }));
 }
 
@@ -73,7 +74,7 @@ export async function saveMessage(
     conversationId,
     role,
     content,
-    parts: extra?.parts ?? null,
+    parts: extra?.parts ?? [{ type: "text", text: content }],
     seq: (maxSeq ?? 0) + 1,
     model: extra?.model,
     tokensIn: Number.isFinite(extra?.tokensIn) ? extra!.tokensIn : null,
