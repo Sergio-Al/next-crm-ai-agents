@@ -107,7 +107,7 @@ export default function SessionsPage() {
     <div className="flex-1 bg-card rounded-[2rem] border border-border relative overflow-hidden overflow-y-auto">
       <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
 
-      <div className="p-8 max-w-5xl space-y-6">
+      <div className="p-8 w-full max-w-[1400px] mx-auto space-y-6">
         {/* Header */}
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-foreground">{t("title")}</h1>

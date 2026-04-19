@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
+import { SessionFlowDiagram } from "@/components/session-flow";
 
 interface SessionEvent {
   id: string;
@@ -145,6 +146,7 @@ export default function SessionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
   const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
+  const [planView, setPlanView] = useState<"diagram" | "list">("diagram");
 
   const fetchSession = () => {
     fetch(`/api/sessions/${id}`)
@@ -222,7 +224,7 @@ export default function SessionDetailPage() {
   return (
     <div className="flex-1 bg-card rounded-[2rem] border border-border relative overflow-hidden overflow-y-auto">
       <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
-      <div className="p-8 max-w-5xl space-y-6">
+      <div className="p-8 w-full max-w-[1400px] mx-auto space-y-6">
         {/* Breadcrumb */}
         <button
           onClick={() => router.push("/sessions")}
@@ -348,11 +350,63 @@ export default function SessionDetailPage() {
           </div>
         )}
 
-        {/* Plan Steps — expandable with events */}
-        <div className="rounded-xl border border-border bg-muted/30 overflow-hidden">
-          <div className="px-4 py-3 border-b border-border">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+          <div className="xl:col-span-7">
+            {/* Plan view toggle + content */}
+            <div className="rounded-xl border border-border bg-muted/30 overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
               <h3 className="text-sm font-medium text-foreground">{t("plan")}</h3>
+              <div className="flex items-center gap-1 rounded-lg border border-border bg-card p-0.5">
+                <button
+                  onClick={() => setPlanView("diagram")}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                    planView === "diagram"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t("viewDiagram")}
+                </button>
+                <button
+                  onClick={() => setPlanView("list")}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                    planView === "list"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {t("viewList")}
+                </button>
+              </div>
           </div>
+
+          {/* Flow diagram view */}
+          {planView === "diagram" && (
+            <div className="p-4">
+              <SessionFlowDiagram
+                plan={plan as import("@/components/session-flow/session-flow-diagram").SessionStep[]}
+                currentStepIndex={session.currentStepIndex}
+                sessionStatus={session.status}
+                events={events}
+                stepLabels={{
+                  crm_action: t("stepCrmAction"),
+                  notify: t("stepNotification"),
+                  wait: t("stepWait"),
+                  ai_reason: t("stepAiReasoning"),
+                  human_checkpoint: t("stepHumanCheckpoint"),
+                }}
+                startLabel={t("flowStart")}
+                endLabel={t("flowEnd")}
+                onStepClick={(idx) => {
+                  setPlanView("list");
+                  setExpandedSteps((prev) => new Set(prev).add(idx));
+                }}
+              />
+            </div>
+          )}
+
+          {/* List view (original) */}
+          {planView === "list" && (
           <div className="divide-y divide-border">
             {plan.map((step, i) => {
               const Icon = STEP_ICONS[step.type] ?? Zap;
@@ -541,10 +595,13 @@ export default function SessionDetailPage() {
               );
             })}
           </div>
-        </div>
+          )}
+            </div>
+          </div>
 
-        {/* Activity log — global events & full timeline */}
-        <div className="rounded-xl border border-border bg-muted/30 overflow-hidden">
+          {/* Activity log — global events & full timeline */}
+          <div className="xl:col-span-5 xl:sticky xl:top-6">
+            <div className="rounded-xl border border-border bg-muted/30 overflow-hidden">
           <div className="px-4 py-3 border-b border-border flex items-center justify-between">
             <h3 className="text-sm font-medium text-foreground">{t("activity")}</h3>
             <span className="text-xs text-muted-foreground/60">{t("events", { count: events.length })}</span>
@@ -598,6 +655,8 @@ export default function SessionDetailPage() {
               })}
             </div>
           )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

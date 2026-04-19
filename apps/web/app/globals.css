@@ -185,3 +185,15 @@
     color: oklch(0.278 0.131 248);
     }
 }
+
+/* React Flow — Session Flow Diagram */
+.session-flow-diagram .react-flow__edge.animated path {
+  stroke-dasharray: 5;
+  animation: flow-dash 0.6s linear infinite;
+}
+
+@keyframes flow-dash {
+  to {
+    stroke-dashoffset: -10;
+  }
+}

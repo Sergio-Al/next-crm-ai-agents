@@ -259,7 +259,11 @@
     "justNow": "just now",
     "minutesAgo": "{count}m ago",
     "hoursAgo": "{count}h ago",
-    "daysAgo": "{count}d ago"
+    "daysAgo": "{count}d ago",
+    "viewDiagram": "Diagram",
+    "viewList": "List",
+    "flowStart": "Start",
+    "flowEnd": "End"
   },
   "aiChat": {
     "floatButtonLabel": "Ask AI about this",
