@@ -142,7 +142,8 @@ export async function POST(req: NextRequest) {
 
       const qty = item.quantity ?? 1;
       const discPct = item.discountPct ?? 0;
-      const unitPrice = parseFloat(product.price);
+      const normalizedPrice = product.price ?? "0";
+      const unitPrice = parseFloat(normalizedPrice);
       const lineTotal = unitPrice * qty * (1 - discPct / 100);
 
       subtotal += lineTotal;
@@ -151,7 +152,7 @@ export async function POST(req: NextRequest) {
         productId: product.id,
         productName: product.name,
         productSku: product.sku,
-        unitPrice: product.price,
+        unitPrice: normalizedPrice,
         quantity: qty,
         discountPct: discPct.toFixed(2),
         lineTotal: lineTotal.toFixed(2),

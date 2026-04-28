@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { streamText, tool, stepCountIs, convertToModelMessages, type UIMessage } from "ai";
+import { streamText, tool, stepCountIs, convertToModelMessages, embed, type UIMessage } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from 'zod';
 import { readFileSync } from "fs";
@@ -31,7 +31,23 @@ For WRITE operations (creating contacts, creating deals, updating deal stages, c
 
 CRITICAL: When the user asks to create a contact, deal, order, or update a stage, call the appropriate preview tool RIGHT AWAY. Do NOT ask the user for details first. Do NOT list what information you need. Just call the tool immediately with whatever information you have (even if it's nothing) — the form handles the rest. For example, if the user says "create a new deal", call previewCreateDeal immediately with an empty title. Never respond with text asking for fields.
 
-When the user asks about product suggestions or what to recommend for a contact, use the suggestProducts tool. It uses AI-powered semantic search on the product catalog based on the contact's purchase history.
+When the user asks about product suggestions or what to recommend for a contact OR account, use the suggestProducts tool. Pass contactId for an individual person, OR accountId for a company-level recommendation (aggregates all that account's orders). It uses pgvector centroid search over the contact/account's purchase history, excluding already-purchased products, and reranks with reasoning.
+
+CROSS-SELL FROM PEERS — IMPORTANT:
+- Use **crossSellFromPeers** when the user asks about *peer-based* / *collaborative* recommendations: "what are similar accounts buying", "cross-sell ideas based on peers", "what do customers like this one buy", "qué compran clientes parecidos a este". This finds K most similar accounts by purchase-vector centroid and recommends products those peers bought that the subject hasn't.
+- Use **suggestProducts** for own-history-based recommendations ("what should I recommend to this customer", "next best product for them").
+- When ambiguous, prefer suggestProducts. When the user explicitly says "peers", "similar accounts", "other customers", "comparable accounts", use crossSellFromPeers.
+- Both tools accept contactId or accountId. crossSellFromPeers operates at the account level — a contactId is internally resolved to its accountId.
+
+When crossSellFromPeers or suggestProducts return results, render them as an openui-lang Card/Table with columns Producto, SKU, Precio, and a Razón column for the per-product reason. For crossSellFromPeers also include a "# peers" column showing how many similar accounts bought each product. Do NOT repeat the raw JSON.
+
+PRODUCT SEARCH — IMPORTANT:
+- **Default tool: search_products_similar** (pgvector semantic search). Use it for ALL product discovery, including: "recomiéndame productos con X", "productos para Y", "busca productos de Z", ingredient names (diclofenaco, ibuprofeno, paracetamol, bicarbonato, etc.), symptoms, use-cases, brand names, or any natural-language product query.
+- **Only use searchProducts when** the user gives an exact SKU code (e.g. "210000046") or asks to filter strictly by an exact category field.
+- Ingredient/active-substance names (even if specific) are natural-language queries → use search_products_similar.
+- When in doubt, use search_products_similar.
+
+When search_products_similar returns results, render them as an openui-lang Card/Table with columns Nombre, SKU, Precio, and include the brand/family when relevant. Do NOT repeat the raw JSON.
 
 You can also create agent sessions — background processes that execute multi-step plans like follow-ups, reminders, and nurture sequences. Use previewCreateSession to propose a plan with steps. Step types:
 - crm_action: Execute a CRM operation (create activity, update record)
@@ -127,7 +143,34 @@ export async function POST(req: NextRequest) {
       if (contact) {
         const fullName = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
         const tags = Array.isArray(contact.tags) ? contact.tags.join(", ") : "";
-        systemPrompt += `\n\n## Active Context\nThe user is currently viewing this contact:\n- Contact ID: ${contact.id}\n- Name: ${fullName}\n- Email: ${contact.email ?? "N/A"}\n- Phone: ${contact.phone ?? "N/A"}\n- Company: ${contact.companyName ?? "N/A"}\n- Source: ${contact.source ?? "N/A"}\n- Tags: ${tags || "none"}\n\nWhen the user says "this contact" they mean "${fullName}" (ID: ${contact.id}). Use this context to answer questions and pre-fill tool calls.`;
+        const accountLine = contact.accountId
+          ? `\n- Account ID: ${contact.accountId} (use for crossSellFromPeers and account-level suggestProducts)`
+          : "";
+        systemPrompt += `\n\n## Active Context\nThe user is currently viewing this contact:\n- Contact ID: ${contact.id}\n- Name: ${fullName}\n- Email: ${contact.email ?? "N/A"}\n- Phone: ${contact.phone ?? "N/A"}\n- Company: ${contact.companyName ?? "N/A"}\n- Source: ${contact.source ?? "N/A"}\n- Tags: ${tags || "none"}${accountLine}\n\nWhen the user says "this contact" they mean "${fullName}" (ID: ${contact.id}). Use this context to answer questions and pre-fill tool calls. For peer/cross-sell questions about "similar customers", call crossSellFromPeers with this contact's accountId (if available) or contactId.`;
+      }
+    } else if (context.type === "account") {
+      const account = await db.query.crmAccounts.findFirst({
+        where: eq(schema.crmAccounts.id, context.id),
+      });
+
+      if (account) {
+        const stats = await db
+          .select({
+            orderCount: sql<number>`count(*)::int`,
+            totalRevenue: sql<string>`coalesce(sum(${schema.orders.totalAmount}), 0)::text`,
+            lastOrderAt: sql<string | null>`max(${schema.orders.createdAt})::text`,
+          })
+          .from(schema.orders)
+          .where(
+            and(
+              eq(schema.orders.accountId, account.id),
+              eq(schema.orders.status, "confirmed"),
+            ),
+          )
+          .then((r) => r[0]);
+
+        const tags = Array.isArray(account.tags) ? account.tags.join(", ") : "";
+        systemPrompt += `\n\n## Active Context\nThe user is currently viewing this account:\n- Account ID: ${account.id}\n- Name: ${account.name}\n- Industry: ${account.industry ?? "N/A"}\n- SAP ID: ${account.sapAccountId ?? "N/A"}\n- Tags: ${tags || "none"}\n- Confirmed orders: ${stats?.orderCount ?? 0}\n- Lifetime revenue (confirmed): ${stats?.totalRevenue ?? "0"}\n- Last order: ${stats?.lastOrderAt ?? "N/A"}\n\nWhen the user says "this account" / "this customer" / "this company" they mean "${account.name}" (ID: ${account.id}). Use this context to answer questions and pre-fill tool calls. For "what are peers/similar accounts buying" use crossSellFromPeers with accountId="${account.id}". For "what should we recommend to them based on their own history" use suggestProducts with accountId="${account.id}".`;
       }
     } else if (context.type === "order") {
       const order = await db
@@ -172,6 +215,15 @@ export async function POST(req: NextRequest) {
     messages: await convertToModelMessages(messages),
 
     stopWhen: stepCountIs(5),
+
+    onStepFinish: ({ toolCalls }) => {
+      if (toolCalls?.length) {
+        console.log(
+          "[chat] tools used:",
+          toolCalls.map((t) => `${t.toolName}(${JSON.stringify(t.input)})`).join(", "),
+        );
+      }
+    },
 
     tools: {
       searchContacts: tool({
@@ -410,10 +462,10 @@ export async function POST(req: NextRequest) {
 
       searchProducts: tool({
         description:
-          "Search the product catalog by name, SKU, category, or tags. Returns matching active products.",
+          "STRICT lookup by exact SKU code or exact category name. Do NOT use this for natural-language queries, ingredient names, symptoms, or recommendations — use search_products_similar instead. Only use when the user provides a specific SKU (numeric code) or literal category filter.",
         inputSchema: z.object({
-          query: z.string().optional().describe("Search term for product name, SKU, or description"),
-          category: z.string().optional().describe("Filter by category"),
+          query: z.string().optional().describe("Exact SKU code only (e.g. '210000046')"),
+          category: z.string().optional().describe("Exact category name to filter by"),
         }),
         execute: async ({ query, category }) => {
           const conditions = [sql`${schema.products.active} = true`];
@@ -443,6 +495,39 @@ export async function POST(req: NextRequest) {
             .limit(15);
 
           return { products: rows, total: rows.length };
+        },
+      }),
+
+      search_products_similar: tool({
+        description:
+          "PRIMARY product search tool. Uses pgvector semantic search over the product catalog. Use for ALL product discovery queries: recommendations, ingredient names (diclofenaco, ibuprofeno, bicarbonato, etc.), symptoms, use-cases, brand names, families, or any natural-language query. Handles Spanish and English. Prefer this over searchProducts unless the user gave an exact SKU code.",
+        inputSchema: z.object({
+          query: z
+            .string()
+            .describe(
+              "Natural-language product query (e.g. 'analgésico para dolor de cabeza', 'gotas para ojos secos', 'antiinflamatorio')",
+            ),
+          limit: z.number().int().min(1).max(50).optional().describe("Max results (default 10)"),
+        }),
+        execute: async ({ query, limit }) => {
+          const { embedding } = await embed({
+            model: openai.embedding("text-embedding-3-small"),
+            value: query,
+          });
+
+          const vectorLiteral = `[${embedding.join(",")}]`;
+          const result = await db.execute(sql`
+            SELECT id, name, sku, brand, type, category, family_name, group_name,
+                   min_price, price, currency, available, approved, image_url,
+                   embedding <=> ${vectorLiteral}::vector AS distance
+            FROM products
+            WHERE active = true
+              AND embedding IS NOT NULL
+            ORDER BY distance ASC
+            LIMIT ${limit ?? 10}
+          `);
+
+          return { query, count: result.rows.length, results: result.rows };
         },
       }),
 
@@ -489,20 +574,82 @@ export async function POST(req: NextRequest) {
 
       suggestProducts: tool({
         description:
-          "Get AI-powered product suggestions for a contact based on their purchase history. Uses semantic search on the product catalog.",
+          "Recommend products for a CONTACT or ACCOUNT based on their order history. Uses pgvector centroid of past purchases (with text-profile fallback) + LLM rerank with reasoning. Pass exactly one of contactId or accountId. Already-purchased products are automatically excluded.",
         inputSchema: z.object({
-          contactId: z.string().uuid().describe("The contact ID to get suggestions for"),
+          contactId: z.string().uuid().optional().describe("Recommend for an individual contact"),
+          accountId: z.string().uuid().optional().describe("Recommend for a whole account/company (aggregates all its orders)"),
+          limit: z.number().int().min(1).max(20).optional().describe("Max suggestions (default 5)"),
         }),
-        execute: async ({ contactId }) => {
+        execute: async ({ contactId, accountId, limit: maxSuggestions }) => {
+          const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+          
+          // Reject nil UUIDs; if contactId is nil/empty, use only accountId
+          if (contactId?.toLowerCase() === NIL_UUID || !contactId) {
+            contactId = undefined;
+          }
+          if (accountId?.toLowerCase() === NIL_UUID || !accountId) {
+            accountId = undefined;
+          }
+          
+          if (!contactId && !accountId) {
+            return { error: "No valid contact or account selected" };
+          }
           const res = await fetch(
             `${process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3100"}/api/orders/suggest`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ contactId }),
+              body: JSON.stringify({ contactId, accountId, limit: maxSuggestions, locale }),
             },
           );
-          if (!res.ok) return { error: "Failed to get suggestions" };
+          if (!res.ok) {
+            const errorBody = await res.text();
+            return { error: `Failed to get suggestions: ${res.status}` };
+          }
+          return await res.json();
+        },
+      }),
+
+      crossSellFromPeers: tool({
+        description:
+          "COLLABORATIVE cross-sell: find products that ACCOUNTS SIMILAR to this one bought, that this account hasn't yet. Uses purchase-vector centroid to identify peer accounts, then aggregates their purchases. Use when the user asks about 'peers', 'similar accounts', 'other customers like this one', or 'cross-sell ideas based on what comparable accounts buy'. For own-history-based recommendations use suggestProducts instead. Pass exactly one of accountId or contactId (a contactId is resolved to its account).",
+        inputSchema: z.object({
+          accountId: z.string().uuid().optional().describe("Subject account UUID"),
+          contactId: z.string().uuid().optional().describe("Contact UUID — internally resolved to its accountId"),
+          limit: z.number().int().min(1).max(20).optional().describe("Max suggestions (default 5)"),
+          peerCount: z.number().int().min(3).max(50).optional().describe("How many peer accounts to consider (default 10)"),
+        }),
+        execute: async ({ accountId, contactId, limit: maxSuggestions, peerCount }) => {
+          const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+          
+          // Reject nil UUIDs; if contactId is nil/empty, use only accountId
+          if (contactId?.toLowerCase() === NIL_UUID || !contactId) {
+            contactId = undefined;
+          }
+          if (accountId?.toLowerCase() === NIL_UUID || !accountId) {
+            accountId = undefined;
+          }
+          
+          if (!accountId && !contactId) {
+            return { error: "No valid account or contact selected" };
+          }
+          const res = await fetch(
+            `${process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3100"}/api/orders/cross-sell`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                accountId,
+                contactId,
+                limit: maxSuggestions,
+                peerCount,
+                locale,
+              }),
+            },
+          );
+          if (!res.ok) {
+            return { error: `Failed to get peer cross-sell: ${res.status}` };
+          }
           return await res.json();
         },
       }),
@@ -578,7 +725,12 @@ export async function POST(req: NextRequest) {
       }),
     },
 
-    onFinish: async ({ text, usage }) => {
+    onFinish: async ({ text, usage, toolCalls }) => {
+      if (toolCalls?.length) {
+        console.log("[chat] tool calls in this conversation:", toolCalls.map((c) => c.toolName));
+      }
+
+      console.log(`[chat] usage for this response: inputTokens=${usage?.inputTokens} outputTokens=${usage?.outputTokens} totalTokens=${usage?.totalTokens}`);
       if (text) {
         await saveMessage(conversationId!, "assistant", text, {
           model,

@@ -1,0 +1,15 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install only what's needed for psycopg2-binary and confluent-kafka
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY services/kafka-sync/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY services/kafka-sync/ .
+
+CMD ["python", "main.py"]

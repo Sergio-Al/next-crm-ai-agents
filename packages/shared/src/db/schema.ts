@@ -1,5 +1,6 @@
 import {
   pgTable,
+  pgSchema,
   uuid,
   varchar,
   text,
@@ -198,13 +199,23 @@ export const crmAccounts = pgTable(
     industry: varchar("industry", { length: 200 }),
     size: varchar("size", { length: 50 }),
     website: text("website"),
+    // SuiteCRM SAP customer code (accounts_cstm.idcuentasap_c) — shortcut FK
+    // used to resolve hanpe_pedidos.kunnr_c → crm_accounts without traversing
+    // task → visit. Populated by the account-cstm CDC handler.
+    sapAccountId: varchar("sap_account_id", { length: 50 }),
     customFields: jsonb("custom_fields").default({}),
     tags: text("tags").array().default([]),
+    externalId: varchar("external_id", { length: 36 }),
+    externalSource: varchar("external_source", { length: 50 }),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
-  (t) => [index("IX_crm_accounts_workspace").on(t.workspaceId)],
+  (t) => [
+    index("IX_crm_accounts_workspace").on(t.workspaceId),
+    uniqueIndex("IX_crm_accounts_external").on(t.workspaceId, t.externalSource, t.externalId),
+    index("IX_crm_accounts_sap").on(t.workspaceId, t.sapAccountId),
+  ],
 );
 
 export const contacts = pgTable(
@@ -226,6 +237,8 @@ export const contacts = pgTable(
     avatarUrl: text("avatar_url"),
     customFields: jsonb("custom_fields").default({}),
     tags: text("tags").array().default([]),
+    externalId: varchar("external_id", { length: 36 }),
+    externalSource: varchar("external_source", { length: 50 }),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
@@ -234,6 +247,7 @@ export const contacts = pgTable(
     index("IX_contacts_workspace").on(t.workspaceId),
     index("IX_contacts_email").on(t.workspaceId, t.email),
     index("IX_contacts_account").on(t.accountId),
+    uniqueIndex("IX_contacts_external").on(t.workspaceId, t.externalSource, t.externalId),
   ],
 );
 
@@ -331,21 +345,46 @@ export const products = pgTable(
     sku: varchar("sku", { length: 100 }),
     description: text("description"),
     category: varchar("category", { length: 200 }),
-    price: decimal("price", { precision: 15, scale: 2 }).notNull(),
+    price: decimal("price", { precision: 15, scale: 2 }),
     currency: varchar("currency", { length: 3 }).default("USD"),
     unit: varchar("unit", { length: 50 }).default("piece"),
     stockQty: integer("stock_qty"),
     active: boolean("active").default(true),
+    // Promoted from aos_products
+    type: varchar("type", { length: 50 }),
+    cost: decimal("cost", { precision: 15, scale: 2 }),
+    imageUrl: text("image_url"),
+    // Promoted from aos_products_cstm
+    brand: varchar("brand", { length: 200 }),
+    minPrice: decimal("min_price", { precision: 15, scale: 2 }),
+    available: decimal("available", { precision: 15, scale: 3 }),
+    reserved: integer("reserved"),
+    approved: boolean("approved"),
+    familyId: varchar("family_id", { length: 50 }),
+    familyName: varchar("family_name", { length: 200 }),
+    groupId: varchar("group_id", { length: 50 }),
+    groupName: varchar("group_name", { length: 200 }),
+    subgroupId: varchar("subgroup_id", { length: 50 }),
+    subgroupName: varchar("subgroup_name", { length: 200 }),
     customFields: jsonb("custom_fields").default({}),
     tags: text("tags").array().default([]),
     embedding: vector("embedding", { dimensions: 1536 }),
+    externalId: varchar("external_id", { length: 36 }),
+    externalSource: varchar("external_source", { length: 50 }),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
   (t) => [
     index("IX_products_workspace").on(t.workspaceId),
-    uniqueIndex("IX_products_sku").on(t.workspaceId, t.sku),
+    // SuiteCRM `aos_products` allows duplicate SKUs (multiple rows with the same maincode),
+    // so we keep only a non-unique lookup index. Uniqueness is enforced via external_id.
+    index("IX_products_sku").on(t.workspaceId, t.sku),
+    uniqueIndex("IX_products_external").on(t.workspaceId, t.externalSource, t.externalId),
+    index("IX_products_type").on(t.workspaceId, t.type),
+    index("IX_products_brand").on(t.workspaceId, t.brand),
+    index("IX_products_family").on(t.workspaceId, t.familyId),
+    index("IX_products_group").on(t.workspaceId, t.groupId),
   ],
 );
 
@@ -378,17 +417,31 @@ export const orders = pgTable(
     shippedAt: timestamp("shipped_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    // SuiteCRM bridge columns (full source detail lives in suite_reco.pedidos):
+    // - external_task_id: tasks.id whose Completed status confirmed the pedido
+    // - status_source: "manual" | "sap" — which flow set status='confirmed'
+    // - region_code/division_code: idregional_c / iddivision_c for filtering
+    externalTaskId: varchar("external_task_id", { length: 36 }),
+    statusSource: varchar("status_source", { length: 20 }),
+    regionCode: varchar("region_code", { length: 50 }),
+    divisionCode: varchar("division_code", { length: 50 }),
     customFields: jsonb("custom_fields").default({}),
+    externalId: varchar("external_id", { length: 36 }),
+    externalSource: varchar("external_source", { length: 50 }),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
   },
   (t) => [
-    uniqueIndex("IX_orders_number").on(t.workspaceId, t.number),
+    // Invoices and pedidos share this table and may collide on `number`
+    // (e.g. invoice nro 6433 and pedido nro_pedido 6433). Keep a lookup index
+    // but enforce uniqueness only via (external_source, external_id).
+    index("IX_orders_number").on(t.workspaceId, t.number),
     index("IX_orders_workspace_status").on(t.workspaceId, t.status),
     index("IX_orders_contact").on(t.contactId),
     index("IX_orders_account").on(t.accountId),
     index("IX_orders_deal").on(t.dealId),
+    uniqueIndex("IX_orders_external").on(t.workspaceId, t.externalSource, t.externalId),
   ],
 );
 
@@ -409,10 +462,13 @@ export const orderItems = pgTable(
     discountPct: decimal("discount_pct", { precision: 5, scale: 2 }).default("0"),
     lineTotal: decimal("line_total", { precision: 15, scale: 2 }).notNull(),
     notes: text("notes"),
+    externalId: varchar("external_id", { length: 36 }),
+    externalSource: varchar("external_source", { length: 50 }),
   },
   (t) => [
     index("IX_order_items_order").on(t.orderId),
     index("IX_order_items_product").on(t.productId),
+    uniqueIndex("IX_order_items_external").on(t.orderId, t.externalSource, t.externalId),
   ],
 );
 
@@ -1095,3 +1151,208 @@ export const orderItemsRelations = relations(orderItems, ({ one }) => ({
     references: [products.id],
   }),
 }));
+
+// ══════════════════════════════════════════════════════════════
+// SUITECRM RECOMMENDATION SCHEMA (`suite_reco`)
+// ──────────────────────────────────────────────────────────────
+// Source-specific lineage and detail facts for SuiteCRM-driven
+// recommendation features. Generic CRM/UX queries continue to use
+// `crm_accounts`, `orders`, `order_items`, `products`. This schema
+// holds the bulky/source-specific columns that don't belong on the
+// app-facing tables.
+// ══════════════════════════════════════════════════════════════
+
+export const suiteReco = pgSchema("suite_reco");
+
+// kunnr (SAP customer code) → crm_accounts.id lookup. Populated from
+// accounts_cstm.idcuentasap_c so hanpe_pedidos.kunnr_c can resolve to
+// an account without traversing the task → visit chain.
+export const suiteRecoKunnrLookup = suiteReco.table(
+  "kunnr_lookup",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    kunnr: varchar("kunnr", { length: 50 }).notNull(),
+    accountId: uuid("account_id").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.kunnr] }),
+    index("IX_kunnr_lookup_account").on(t.accountId),
+  ],
+);
+
+// Master modelo (hanq_modelo) — the rich product definition used as
+// the primary embedding source. Multiple regional `products` rows
+// (aos_products variants) can link to a single modelo via
+// suite_reco.product_model_links.
+export const suiteRecoModelos = suiteReco.table(
+  "modelos",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    externalId: varchar("external_id", { length: 36 }).notNull(),
+    externalSource: varchar("external_source", { length: 50 }).notNull().default("suitecrm"),
+    name: varchar("name", { length: 300 }),
+    nombreComercial: varchar("nombre_comercial", { length: 300 }),
+    nombreGenerico: varchar("nombre_generico", { length: 300 }),
+    marca: varchar("marca", { length: 200 }),
+    descripcionBasicaText: text("descripcion_basica_text"),
+    caracteristicasText: text("caracteristicas_text"),
+    nombreFamilia: varchar("nombre_familia", { length: 255 }),
+    nombreGrupo: varchar("nombre_grupo", { length: 255 }),
+    nombreSubgrupo: varchar("nombre_subgrupo", { length: 255 }),
+    idfamilia: varchar("idfamilia", { length: 100 }),
+    idgrupo: varchar("idgrupo", { length: 100 }),
+    idsubgrupo: varchar("idsubgrupo", { length: 100 }),
+    grupoMaterial1: varchar("grupo_material1", { length: 100 }),
+    grupoMaterial2: varchar("grupo_material2", { length: 100 }),
+    grupoMaterial3: varchar("grupo_material3", { length: 100 }),
+    codigoaio: varchar("codigoaio", { length: 100 }),
+    codfabrica: varchar("codfabrica", { length: 100 }),
+    iddivision: varchar("iddivision", { length: 100 }),
+    idamercado: varchar("idamercado", { length: 100 }),
+    estado: varchar("estado", { length: 100 }),
+    imageUrl: text("image_url"),
+    customFields: jsonb("custom_fields").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("IX_modelos_external").on(t.workspaceId, t.externalSource, t.externalId),
+    index("IX_modelos_marca").on(t.workspaceId, t.marca),
+    index("IX_modelos_familia").on(t.workspaceId, t.idfamilia),
+    index("IX_modelos_grupo").on(t.workspaceId, t.idgrupo),
+  ],
+);
+
+// hanq_modelo_aos_products_c junction (modelo ↔ aos_products).
+// One modelo can have N regional product variants.
+export const suiteRecoProductModelLinks = suiteReco.table(
+  "product_model_links",
+  {
+    externalId: varchar("external_id", { length: 36 }).primaryKey(),
+    workspaceId: uuid("workspace_id").notNull(),
+    modeloId: uuid("modelo_id").notNull().references(() => suiteRecoModelos.id, { onDelete: "cascade" }),
+    productId: uuid("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+    modeloExternalId: varchar("modelo_external_id", { length: 36 }).notNull(),
+    productExternalId: varchar("product_external_id", { length: 36 }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    index("IX_pml_modelo").on(t.modeloId),
+    index("IX_pml_product").on(t.productId),
+    uniqueIndex("IX_pml_pair").on(t.workspaceId, t.modeloExternalId, t.productExternalId),
+  ],
+);
+
+// hanq_stock — unit-level stock (per chassis/lot/motor, not bulk qty).
+// products.stock_qty is maintained as COUNT(*) of available stock units.
+export const suiteRecoStockUnits = suiteReco.table(
+  "stock_units",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    externalId: varchar("external_id", { length: 36 }).notNull(),
+    externalSource: varchar("external_source", { length: 50 }).notNull().default("suitecrm"),
+    productId: uuid("product_id").references(() => products.id, { onDelete: "set null" }),
+    productExternalId: varchar("product_external_id", { length: 36 }),
+    name: varchar("name", { length: 255 }),
+    chasis: varchar("chasis", { length: 255 }),
+    motor: varchar("motor", { length: 255 }),
+    lote: varchar("lote", { length: 255 }),
+    almacen: varchar("almacen", { length: 255 }),
+    ubicacion: varchar("ubicacion", { length: 255 }),
+    nombreColor: varchar("nombre_color", { length: 255 }),
+    stock: integer("stock"),
+    estadoCotizacion: varchar("estado_cotizacion", { length: 100 }),
+    dateDue: timestamp("date_due", { withTimezone: true }),
+    customFields: jsonb("custom_fields").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("IX_stock_units_external").on(t.workspaceId, t.externalSource, t.externalId),
+    index("IX_stock_units_product").on(t.productId),
+    index("IX_stock_units_estado").on(t.workspaceId, t.estadoCotizacion),
+  ],
+);
+
+// hanpe_pedidos — source-specific pedido detail. The app-facing `orders`
+// row is created in parallel and shares the same external_id.
+export const suiteRecoPedidos = suiteReco.table(
+  "pedidos",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    externalId: varchar("external_id", { length: 36 }).notNull(),
+    externalSource: varchar("external_source", { length: 50 }).notNull().default("suitecrm"),
+    orderId: uuid("order_id").references(() => orders.id, { onDelete: "set null" }),
+    accountId: uuid("account_id").references(() => crmAccounts.id, { onDelete: "set null" }),
+    nroPedido: varchar("nro_pedido", { length: 100 }),
+    nroSap: varchar("nro_sap", { length: 100 }),
+    kunnr: varchar("kunnr", { length: 50 }),
+    kunnrFact: varchar("kunnr_fact", { length: 50 }),
+    kunnrDest: varchar("kunnr_dest", { length: 50 }),
+    estadoOriginal: varchar("estado_original", { length: 255 }),
+    statusSource: varchar("status_source", { length: 20 }),
+    externalTaskId: varchar("external_task_id", { length: 36 }),
+    fechaPedido: timestamp("fecha_pedido", { withTimezone: true }),
+    fechaEntrega: timestamp("fecha_entrega", { withTimezone: true }),
+    fechaCompromisoPago: timestamp("fecha_compromiso_pago", { withTimezone: true }),
+    paymentType: varchar("payment_type", { length: 100 }),
+    codTipoPedido: integer("cod_tipo_pedido"),
+    tipoDoc: varchar("tipo_doc", { length: 100 }),
+    regionCode: varchar("region_code", { length: 50 }),
+    divisionCode: varchar("division_code", { length: 50 }),
+    canalCode: varchar("canal_code", { length: 50 }),
+    sectorCode: varchar("sector_code", { length: 50 }),
+    mercadoCode: varchar("mercado_code", { length: 50 }),
+    razonSocial: varchar("razon_social", { length: 255 }),
+    nit: varchar("nit", { length: 100 }),
+    currencyId: varchar("currency_id", { length: 36 }),
+    subtotalAmount: decimal("subtotal_amount", { precision: 18, scale: 4 }),
+    taxAmount: decimal("tax_amount", { precision: 18, scale: 4 }),
+    totalAmount: decimal("total_amount", { precision: 18, scale: 4 }),
+    productsQuantity: integer("products_quantity"),
+    contactoSolId: varchar("contacto_sol_id", { length: 36 }),
+    estadoSync: varchar("estado_sync", { length: 100 }),
+    customFields: jsonb("custom_fields").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("IX_pedidos_external").on(t.workspaceId, t.externalSource, t.externalId),
+    index("IX_pedidos_order").on(t.orderId),
+    index("IX_pedidos_account").on(t.accountId),
+    index("IX_pedidos_kunnr").on(t.workspaceId, t.kunnr),
+    index("IX_pedidos_estado").on(t.workspaceId, t.estadoOriginal),
+  ],
+);
+
+// tasks — only persisted when bean_type = 'HANPE_Pedidos'. Used to
+// drive manual-flow pedido confirmation when status='Completed'.
+export const suiteRecoTasks = suiteReco.table(
+  "tasks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    externalId: varchar("external_id", { length: 36 }).notNull(),
+    externalSource: varchar("external_source", { length: 50 }).notNull().default("suitecrm"),
+    name: varchar("name", { length: 255 }),
+    status: varchar("status", { length: 100 }),
+    beanType: varchar("bean_type", { length: 100 }),
+    beanId: varchar("bean_id", { length: 36 }),
+    parentType: varchar("parent_type", { length: 100 }),
+    parentId: varchar("parent_id", { length: 36 }),
+    dateStart: timestamp("date_start", { withTimezone: true }),
+    dateDue: timestamp("date_due", { withTimezone: true }),
+    customFields: jsonb("custom_fields").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("IX_tasks_external").on(t.workspaceId, t.externalSource, t.externalId),
+    index("IX_tasks_bean").on(t.workspaceId, t.beanType, t.beanId),
+  ],
+);
+

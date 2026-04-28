@@ -28,10 +28,10 @@ class PartErrorBoundary extends Component<
 
 // Strip ```openui ... ``` code fences if present, return the inner content
 function stripOpenUIFence(text: string): string {
-  const fenceMatch = text.match(/^```openui\s*\n([\s\S]*?)(?:\n```\s*)?$/m);
+  // Accept ```openui or ```openui-lang
+  const fenceMatch = text.match(/^```openui(?:-lang)?\s*\n([\s\S]*?)(?:\n```\s*)?$/m);
   if (fenceMatch) return fenceMatch[1];
-  // Also handle partial streaming where closing fence hasn't arrived yet
-  const openFence = text.match(/^```openui\s*\n([\s\S]*)$/m);
+  const openFence = text.match(/^```openui(?:-lang)?\s*\n([\s\S]*)$/m);
   if (openFence) return openFence[1];
   return text;
 }

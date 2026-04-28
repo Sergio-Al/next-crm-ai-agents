@@ -7,6 +7,7 @@ A distributed conversational agent CRM platform built with Next.js, TimescaleDB,
 - **Node.js** >= 20
 - **pnpm** >= 8
 - **Docker** & **Docker Compose**
+- **Python** >= 3.11 (for the Kafka sync service)
 
 ## Project Structure
 
@@ -21,10 +22,16 @@ packages/
   gateway/         → WebSocket gateway
   agent-worker/    → BullMQ agent worker
   channel-adapters/→ Channel adapter layer
+services/
+  kafka-sync/      → Python CDC sync service (SuiteCRM → TimescaleDB)
 infra/
-  docker-compose.yml → TimescaleDB + pgvector, PgBouncer, Redis
+  docker-compose.yml        → TimescaleDB + pgvector, PgBouncer, Redis
+  docker-swarmkafka.yml     → Kafka stack (KRaft, Kafka Connect + Debezium, Kafka UI)
+  Dockerfile.kafka-sync     → Docker image for the sync service
 scripts/
   seed.ts          → Demo data seeder (contacts, deals, products, orders)
+sqlserver-cdc.json          → Debezium connector config (6 core CRM tables)
+sqlserver-cdc-junction.json → Debezium connector config (3 junction tables)
 ```
 
 ## Getting Started
@@ -100,6 +107,44 @@ pnpm --filter @crm-agent/agent-worker dev
 
 This is required for Agent Sessions to execute (follow-up sequences, reminders, nurture campaigns, etc.). The web app works without it, but sessions will remain queued and won't progress.
 
+### 8. Start the Kafka sync service (optional — requires Kafka + Debezium)
+
+The Kafka sync service streams CDC events from SuiteCRM (SQL Server via Debezium) into TimescaleDB, keeping contacts, accounts, orders, and products in sync automatically.
+
+**Install Python dependencies:**
+
+```bash
+pip install -r services/kafka-sync/requirements.txt
+```
+
+**Configure the sync variables in `.env`:**
+
+```env
+KAFKA_BROKERS=<kafka-host>:48094        # External Kafka address
+KAFKA_GROUP_ID=crm-sync
+KAFKA_TOPIC_PATTERN=^crm\\.HCRM00365\\..*
+SUITECRM_WORKSPACE_ID=<workspace-id>   # UUID or slug of the target workspace
+```
+
+**Run:**
+
+```bash
+pnpm sync:dev
+```
+
+The service will wait for topics to appear and start consuming once the Debezium connector is registered.
+
+#### Registering the Debezium connectors
+
+Upload the connector JSON files to the `connector-config` Docker volume via Portainer, then scale the `register-connector` service to `1`:
+
+- `sqlserver-cdc.json` — 6 core tables: contacts, accounts, invoices, products, product-quotes, visits
+- `sqlserver-cdc-junction.json` — 3 junction tables: email_addresses, email_addr_bean_rel, accounts_contacts
+
+Register both in order. The `register-connector` service retries automatically on worker backoff and exits when done.
+
+> **Note:** The Kafka stack (`docker-swarmkafka.yml`) runs on Docker Swarm. Deploy it via Portainer. It includes Kafka (KRaft), Kafka Connect (Debezium 2.7), and Kafka UI.
+
 ## Common Setup Pitfalls
 
 - **`/api/chat` returns `"An error occurred."`**
@@ -109,6 +154,18 @@ This is required for Agent Sessions to execute (follow-up sequences, reminders, 
 - **`error: type "vector" does not exist` during DB push/migrate**
   - Re-run `pnpm db:push` (or `pnpm db:migrate`).
   - The shared package now auto-runs `CREATE EXTENSION IF NOT EXISTS vector;` before schema operations.
+
+### AG Grid (Orders Page)
+
+- **Orders grid keeps default Quartz look and ignores token overrides**
+  - In AG Grid v33+, pass `theme="legacy"` to `AgGridReact` when using CSS-variable theming.
+  - Keep both classes on the wrapper: `ag-theme-quartz ag-theme-custom`.
+  - Define custom variables/selectors with higher specificity in `apps/web/app/globals.css` using `.ag-theme-quartz.ag-theme-custom`.
+
+- **Orders grid appears blank after enabling internal scroll**
+  - Do not use `domLayout="autoHeight"` if you expect AG Grid to own vertical scrolling.
+  - Ensure the card container is a column flexbox (`flex flex-col`) and the grid wrapper uses `flex-1 min-h-0`.
+  - Avoid adding `overflow-y-auto` on the outer orders page wrapper when the grid should manage its own scrollbar.
 
 ## Available Scripts
 
@@ -123,6 +180,7 @@ This is required for Agent Sessions to execute (follow-up sequences, reminders, 
 | `pnpm db:generate` | Generate Drizzle migrations |
 | `pnpm db:migrate` | Run Drizzle migrations |
 | `pnpm db:studio` | Open Drizzle Studio |
+| `pnpm sync:dev` | Run the Kafka CDC sync service locally |
 
 ## Stopping Infrastructure
 
@@ -131,6 +189,63 @@ docker compose -f infra/docker-compose.yml down
 ```
 
 Add `-v` to also remove data volumes.
+
+---
+
+## SuiteCRM CDC Sync
+
+The platform ingests SuiteCRM data via Debezium → Kafka → a Python sync service that upserts into TimescaleDB.
+
+### Topics consumed
+
+`crm.{TENANT}.{entity}.updated` — `account`, `account-cstm`, `account-contact`, `contact`, `email-address`, `email-rel`, `product`, `product-cstm`, `product-quote`, `invoice`, `pedido` (HANPE_Pedidos), `task`, `modelo`, `modelo-product`, `stock`. Routing is configured in [sqlserver-cdc.json](sqlserver-cdc.json).
+
+### Dev workflow
+
+```bash
+pnpm sync:dev          # runs services/kafka-sync/main.py against the .env config
+tail -f logs/kafka-sync.log
+```
+
+The service writes a rotating log to `logs/kafka-sync.log` (20 MB × 5 backups) and also streams to stderr. Override the path with `KAFKA_SYNC_LOG_FILE`.
+
+### Order lifecycle
+
+Two parallel paths produce orders:
+
+1. **Invoices** (`AOS_Invoices`) → upserted directly with the SuiteCRM status.
+2. **Pedidos** (`HANPE_Pedidos`) → upserted as `draft`, then promoted by either:
+   - **SAP path** — `estado_c` ∈ {`PEDIDO LIBERADO`, `ENTREGA CREADA`, `FACTURA CREADA`} → `confirmed/sap`. `Anulado` → `cancelled/sap`.
+   - **Manual path** — a related `tasks` row with `status='Completed'` and `parent_type='HANPE_Pedidos'` → `confirmed/manual` (set by [`_upsert_task`](services/kafka-sync/sync_handler.py)).
+
+Order items come from `aos_products_quotes` whose `parent_type` is one of `AOS_Invoices`, `Quotes`, `AOS_Quotes`, `HANPE_Pedidos`. Anything else (e.g. `HANE_Entregas`) is skipped at the transformer level.
+
+### Replay & recovery
+
+Snapshot ordering across topics is **not** guaranteed (e.g. `product-quote` events can be processed before their parent `pedido` arrives). The sync layer logs and skips silently when an FK can't be resolved.
+
+To mitigate this, the consumer batches messages and dispatches them in **dependency-tier order** (`account/contact/product/modelo` → `*-cstm` and junctions → `pedido/invoice/modelo-product` → `product-quote/task/stock`). See `ENTITY_TIERS` in [services/kafka-sync/consumer.py](services/kafka-sync/consumer.py).
+
+After every batch commit the handler emits a one-line **FK skip summary** at INFO when any skips occurred:
+
+```
+FK skip summary: orders:fk_not_found=12, orders:task_pedido_missing=3
+```
+
+A quick `grep "FK skip summary" logs/kafka-sync.log | tail` tells you whether the sync is still healing or has reached steady state. When counts come up short after a fresh sync, the fix is to reset offsets for the affected topic(s) and replay. Full procedure — including which order to reset, which DB rows to clear first, and the verification queries — is documented in [.github/skills/cdc-sync/SKILL.md](.github/skills/cdc-sync/SKILL.md#replay--recovery-playbook).
+
+### AI product suggestions: data prerequisites
+
+`POST /api/orders/suggest` returns `strategy: "centroid"` only when the subject account/contact has at least one **confirmed** order with **product-linked** items whose products have **embeddings**. If any of those are missing it falls back to `text-profile` or `popularity`. Verify with:
+
+```sql
+SELECT status, status_source, COUNT(*) FROM orders
+WHERE id IN (SELECT order_id FROM suite_reco.pedidos)
+GROUP BY 1,2;
+
+SELECT COUNT(*) AS items, COUNT(product_id) AS linked FROM order_items;
+SELECT COUNT(*) FROM products WHERE embedding IS NOT NULL;
+```
 
 ---
 
@@ -242,15 +357,21 @@ Track and manage customer orders through their lifecycle:
 
 ### AI Product Suggestions
 
-The AI can recommend products for a contact based on their purchase history using RAG (Retrieval-Augmented Generation):
+The AI can recommend products for either a contact or an account based on purchase history using a hybrid RAG flow:
 
-1. Loads the contact's past orders and items to build a purchase profile
-2. Embeds the profile text using `text-embedding-3-small`
-3. Performs pgvector cosine similarity search against the product catalog embeddings
-4. Passes the top candidates to an LLM (`gpt-4o-mini`) for reasoning and ranking
-5. Returns ranked suggestions with explanations for each recommendation
+1. Resolves subject history from confirmed orders (contact-level or account-level aggregation)
+2. Builds candidates from purchase-embedding centroid similarity when embedded purchases exist
+3. Falls back to text-profile embedding when purchase embeddings are not available
+4. Falls back to popularity when embedding-based retrieval is unavailable
+5. Optionally reranks top candidates with an LLM (`gpt-4o-mini`) and per-product reasons
 
-Trigger suggestions via chat (*"What products should I recommend for this contact?"*) or programmatically via `POST /api/orders/suggest`.
+Trigger suggestions via chat (*"What products should I recommend for this contact?"*, *"What should we recommend to this account?"*) or programmatically via `POST /api/orders/suggest`.
+
+API notes:
+
+- Provide exactly one meaningful subject: `contactId` or `accountId`
+- Nil/placeholder UUIDs (`00000000-0000-0000-0000-000000000000`) are treated as invalid context and ignored/rejected
+- Already-purchased products are excluded from recommendations
 
 ### Contact Integration
 

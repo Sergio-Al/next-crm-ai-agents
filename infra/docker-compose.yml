@@ -40,7 +40,7 @@ services:
     image: redis:7-alpine
     container_name: crm-agent-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
     ports:
       - "6379:6379"
     volumes:
@@ -104,6 +104,24 @@ services:
     environment:
       DATABASE_URL: postgresql://platform:platform@pgbouncer:5432/platform
       REDIS_URL: redis://redis:6379
+    env_file:
+      - ../.env
+
+  kafka-sync:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.kafka-sync
+    container_name: crm-agent-kafka-sync
+    restart: unless-stopped
+    depends_on:
+      pgbouncer:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://platform:platform@pgbouncer:5432/platform
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
+      KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-crm-sync}
+      KAFKA_TOPIC_PATTERN: ${KAFKA_TOPIC_PATTERN:-^crm\\.HCRM00365\\..*}
+      SUITECRM_WORKSPACE_ID: ${SUITECRM_WORKSPACE_ID}
     env_file:
       - ../.env
 

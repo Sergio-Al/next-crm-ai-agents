@@ -33,3 +33,17 @@ npm-debug.log*
 
 # Generated
 apps/web/lib/openui-prompt.txt
+
+# Service logs
+logs/
+
+# cdc json
+sqlserver-cdc.json
+sqlserver-cdc-*.json
+
+# swarm config
+docker-swarmkafka.yml
+
+# misc
+suitecrm-db.md
+cdc-setup-log.md

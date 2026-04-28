@@ -197,3 +197,148 @@
     stroke-dashoffset: -10;
   }
 }
+
+/* AG Grid — themed to match design tokens (shadcn-like, OKLCH).
+   Selectors are doubled (.ag-theme-quartz.ag-theme-custom) to win specificity
+   over the Quartz theme stylesheet that ships with ag-grid. */
+.ag-theme-quartz.ag-theme-custom,
+.ag-theme-custom {
+  /* Surfaces */
+  --ag-background-color: var(--card);
+  --ag-odd-row-background-color: var(--card);
+  --ag-foreground-color: var(--foreground);
+  --ag-secondary-foreground-color: var(--muted-foreground);
+  --ag-data-color: var(--foreground);
+  --ag-disabled-foreground-color: color-mix(in oklch, var(--muted-foreground) 60%, transparent);
+
+  /* Borders & radii */
+  --ag-border-color: var(--border);
+  --ag-row-border-color: color-mix(in oklch, var(--border) 60%, transparent);
+  --ag-row-border-style: solid;
+  --ag-row-border-width: 1px;
+  --ag-wrapper-border-radius: var(--radius-xl);
+  --ag-border-radius: var(--radius-md);
+  --ag-card-radius: var(--radius-md);
+
+  /* Header */
+  --ag-header-background-color: color-mix(in oklch, var(--muted) 50%, transparent);
+  --ag-header-foreground-color: var(--muted-foreground);
+  --ag-header-cell-hover-background-color: color-mix(in oklch, var(--muted) 80%, transparent);
+  --ag-header-cell-moving-background-color: var(--muted);
+  --ag-header-column-separator-color: var(--border);
+  --ag-header-column-resize-handle-color: var(--border);
+
+  /* Rows / hover / selection */
+  --ag-row-hover-color: color-mix(in oklch, var(--accent) 18%, transparent);
+  --ag-selected-row-background-color: color-mix(in oklch, var(--primary) 12%, transparent);
+  --ag-range-selection-background-color: color-mix(in oklch, var(--primary) 14%, transparent);
+  --ag-range-selection-border-color: var(--primary);
+
+  /* Inputs / focus */
+  --ag-input-background-color: var(--background);
+  --ag-input-border-color: var(--border);
+  --ag-input-focus-border-color: var(--ring);
+  --ag-input-focus-box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 25%, transparent);
+  --ag-checkbox-background-color: var(--background);
+  --ag-checkbox-border-radius: var(--radius-sm);
+  --ag-checkbox-checked-color: var(--primary);
+  --ag-checkbox-unchecked-color: var(--muted-foreground);
+  --ag-checkbox-indeterminate-color: var(--primary);
+
+  /* Panels / menus / tooltips */
+  --ag-control-panel-background-color: color-mix(in oklch, var(--muted) 40%, transparent);
+  --ag-panel-background-color: var(--popover);
+  --ag-menu-background-color: var(--popover);
+  --ag-menu-foreground-color: var(--popover-foreground);
+  --ag-tooltip-background-color: var(--popover);
+  --ag-tooltip-foreground-color: var(--popover-foreground);
+  --ag-popup-shadow: 0 8px 28px -8px color-mix(in oklch, var(--foreground) 25%, transparent);
+
+  /* Pagination & misc */
+  --ag-pagination-panel-color: var(--muted-foreground);
+  --ag-icon-font-color: var(--muted-foreground);
+  --ag-value-change-value-highlight-background-color: color-mix(in oklch, var(--primary) 20%, transparent);
+
+  /* Typography */
+  --ag-font-family: inherit;
+  --ag-font-size: 13px;
+
+  /* Sizing */
+  --ag-grid-size: 6px;
+  --ag-cell-horizontal-padding: 14px;
+  --ag-header-height: 44px;
+  --ag-row-height: 52px;
+  --ag-list-item-height: 32px;
+}
+
+/* Polish bits not exposed via CSS variables */
+.ag-theme-quartz.ag-theme-custom .ag-root-wrapper,
+.ag-theme-custom .ag-root-wrapper {
+  border-color: var(--border);
+}
+
+.ag-theme-quartz.ag-theme-custom .ag-header,
+.ag-theme-custom .ag-header {
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+  font-family: inherit;
+}
+
+.ag-theme-quartz.ag-theme-custom .ag-header-cell-text,
+.ag-theme-custom .ag-header-cell-text {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.ag-theme-quartz.ag-theme-custom .ag-row,
+.ag-theme-custom .ag-row {
+  transition: background-color 120ms ease;
+  font-family: inherit;
+}
+
+.ag-theme-quartz.ag-theme-custom .ag-cell,
+.ag-theme-custom .ag-cell {
+  display: flex;
+  align-items: center;
+  font-family: inherit;
+}
+
+.ag-theme-quartz.ag-theme-custom .ag-paging-panel,
+.ag-theme-custom .ag-paging-panel {
+  border-top: 1px solid var(--border);
+  background-color: color-mix(in oklch, var(--muted) 30%, transparent);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  padding: 0 12px;
+}
+
+.ag-theme-quartz.ag-theme-custom .ag-paging-button,
+.ag-theme-custom .ag-paging-button {
+  border-radius: var(--radius-sm);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.ag-theme-quartz.ag-theme-custom .ag-paging-button:hover:not(.ag-disabled),
+.ag-theme-custom .ag-paging-button:hover:not(.ag-disabled) {
+  background-color: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.ag-theme-quartz.ag-theme-custom .ag-icon,
+.ag-theme-custom .ag-icon {
+  color: var(--muted-foreground);
+}
+
+.ag-theme-quartz.ag-theme-custom .ag-row-selected::before,
+.ag-theme-custom .ag-row-selected::before {
+  background-color: color-mix(in oklch, var(--primary) 10%, transparent);
+}
+
+.ag-theme-custom input[class^="ag-"]:focus,
+.ag-theme-custom input[class*=" ag-"]:focus {
+  outline: none;
+  box-shadow: var(--ag-input-focus-box-shadow);
+}

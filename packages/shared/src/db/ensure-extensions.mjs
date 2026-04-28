@@ -14,6 +14,8 @@ async function ensureExtensions() {
     await client.connect();
     await client.query("CREATE EXTENSION IF NOT EXISTS vector;");
     console.log("[db:prepare] pgvector extension is ready");
+    await client.query("CREATE EXTENSION IF NOT EXISTS pg_trgm;");
+    console.log("[db:prepare] pg_trgm extension is ready");
   } finally {
     await client.end();
   }

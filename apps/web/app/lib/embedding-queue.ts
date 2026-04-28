@@ -21,14 +21,14 @@ function getEmbeddingQueue() {
 export async function enqueueEmbedding(productId: string, text: string) {
   const queue = getEmbeddingQueue();
   await queue.add(
-    `embed:${productId}`,
+    `embed-${productId}`,
     { productId, text },
     {
       attempts: 3,
       backoff: { type: "exponential", delay: 5_000 },
       // Deduplicate: if the same product is updated multiple times quickly,
       // only the latest embedding job runs
-      jobId: `embed:${productId}`,
+      jobId: `embed-${productId}`,
       removeOnComplete: 100,
       removeOnFail: 50,
     },

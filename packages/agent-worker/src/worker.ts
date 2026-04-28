@@ -7,6 +7,7 @@ import { loadConversationHistory, appendMessage, appendToolCall } from "./db.js"
 import { loadSkills } from "./skill-loader.js";
 import { pluginManager } from "./hooks.js";
 import { startSessionWorker } from "./session-worker.js";
+import { startEmbeddingWorker } from "./embedding-worker.js";
 import type { SseEvent } from "@crm-agent/shared/types/events";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
@@ -166,3 +167,4 @@ console.log(`[Worker] Agent worker started (concurrency: ${CONCURRENCY})`);
 
 // Start the session step worker alongside the agent-jobs worker
 startSessionWorker();
+startEmbeddingWorker();

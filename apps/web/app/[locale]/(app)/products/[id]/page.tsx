@@ -50,8 +50,8 @@ export default function ProductDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex-1 bg-neutral-900/60 rounded-[2rem] border border-white/5 relative overflow-hidden overflow-y-auto">
-        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+      <div className="flex-1 bg-card rounded-[2rem] border border-border relative overflow-hidden overflow-y-auto">
+        <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
         <div className="p-6 space-y-6">
           <Skeleton className="h-8 w-48" />
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -66,23 +66,23 @@ export default function ProductDetailPage() {
 
   if (!product) {
     return (
-      <div className="flex-1 bg-neutral-900/60 rounded-[2rem] border border-white/5 relative overflow-hidden flex items-center justify-center">
-        <p className="text-neutral-400">{t("notFound")}</p>
+      <div className="flex-1 bg-card rounded-[2rem] border border-border relative overflow-hidden flex items-center justify-center">
+        <p className="text-muted-foreground">{t("notFound")}</p>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 bg-neutral-900/60 rounded-[2rem] border border-white/5 relative overflow-hidden overflow-y-auto">
-      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+    <div className="flex-1 bg-card rounded-[2rem] border border-border relative overflow-hidden overflow-y-auto">
+      <div className="absolute top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-border to-transparent" />
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex items-start gap-4">
           <Link
             href="/products"
-            className="mt-1 p-2 rounded-xl hover:bg-neutral-800/60 transition-colors"
+            className="mt-1 p-2 rounded-xl hover:bg-muted/60 transition-colors"
           >
-            <ArrowLeft className="size-5 text-neutral-400" />
+            <ArrowLeft className="size-5 text-muted-foreground" />
           </Link>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3">
@@ -90,8 +90,8 @@ export default function ProductDetailPage() {
                 <Package className="size-6 text-white" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-white truncate">{product.name}</h1>
-                <p className="text-sm text-neutral-400 mt-0.5">
+                <h1 className="text-2xl font-bold text-foreground truncate">{product.name}</h1>
+                <p className="text-sm text-muted-foreground mt-0.5">
                   {product.sku ? `SKU: ${product.sku}` : t("noSku")}
                 </p>
               </div>
@@ -101,8 +101,8 @@ export default function ProductDetailPage() {
             variant="outline"
             className={
               product.active
-                ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                : "bg-red-500/10 text-red-400 border-red-500/20"
+                ? "bg-success/10 text-success border-success/20"
+                : "bg-destructive/10 text-destructive border-destructive/20"
             }
           >
             {product.active ? t("active") : t("inactive")}
@@ -111,48 +111,48 @@ export default function ProductDetailPage() {
 
         {/* Stat cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="bg-neutral-800/40 border-white/5">
+          <Card className="bg-muted/30 border-border">
             <CardContent className="pt-4">
-              <div className="flex items-center gap-2 text-sm text-neutral-400 mb-1">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                 <DollarSign className="size-4" />
                 {t("price")}
               </div>
-              <p className="text-xl font-bold text-white">
+              <p className="text-xl font-bold text-foreground">
                 {formatCurrency(product.price, product.currency)}
               </p>
-              <p className="text-xs text-neutral-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 {t("perUnit", { unit: product.unit ?? "piece" })}
               </p>
             </CardContent>
           </Card>
 
-          <Card className="bg-neutral-800/40 border-white/5">
+          <Card className="bg-muted/30 border-border">
             <CardContent className="pt-4">
-              <div className="flex items-center gap-2 text-sm text-neutral-400 mb-1">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                 <Layers className="size-4" />
                 {t("category")}
               </div>
-              <p className="text-xl font-bold text-white">
+              <p className="text-xl font-bold text-foreground">
                 {product.category ?? "—"}
               </p>
             </CardContent>
           </Card>
 
-          <Card className="bg-neutral-800/40 border-white/5">
+          <Card className="bg-muted/30 border-border">
             <CardContent className="pt-4">
-              <div className="flex items-center gap-2 text-sm text-neutral-400 mb-1">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                 <Package className="size-4" />
                 {t("stock")}
               </div>
-              <p className="text-xl font-bold text-white">
+              <p className="text-xl font-bold text-foreground">
                 {product.stockQty !== null ? product.stockQty : "∞"}
               </p>
             </CardContent>
           </Card>
 
-          <Card className="bg-neutral-800/40 border-white/5">
+          <Card className="bg-muted/30 border-border">
             <CardContent className="pt-4">
-              <div className="flex items-center gap-2 text-sm text-neutral-400 mb-1">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
                 <Tag className="size-4" />
                 {t("tags")}
               </div>
@@ -164,7 +164,7 @@ export default function ProductDetailPage() {
                     </Badge>
                   ))
                 ) : (
-                  <span className="text-neutral-500 text-sm">—</span>
+                  <span className="text-muted-foreground text-sm">—</span>
                 )}
               </div>
             </CardContent>
@@ -174,8 +174,8 @@ export default function ProductDetailPage() {
         {/* Description */}
         {product.description && (
           <div>
-            <h2 className="text-lg font-semibold text-white mb-2">{t("description")}</h2>
-            <p className="text-neutral-300 leading-relaxed">{product.description}</p>
+            <h2 className="text-lg font-semibold text-foreground mb-2">{t("description")}</h2>
+            <p className="text-muted-foreground leading-relaxed">{product.description}</p>
           </div>
         )}
       </div>

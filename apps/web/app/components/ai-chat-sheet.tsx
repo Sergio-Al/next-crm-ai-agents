@@ -19,19 +19,42 @@ const DEFAULT_WIDTH = 520;
 
 interface AiChatSheetProps {
   context: ChatContext;
+  /** Optional controlled open state. When provided, the sheet becomes a controlled component. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Hide the floating launcher button (useful when external buttons control the sheet). */
+  hideFloatingButton?: boolean;
 }
 
-export function AiChatSheet({ context }: AiChatSheetProps) {
-  const [open, setOpen] = useState(false);
+export function AiChatSheet({
+  context,
+  open: openProp,
+  onOpenChange,
+  hideFloatingButton,
+}: AiChatSheetProps) {
+  const [openInternal, setOpenInternal] = useState(false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : openInternal;
+  const setOpen = useCallback(
+    (value: boolean) => {
+      if (!isControlled) setOpenInternal(value);
+      onOpenChange?.(value);
+    },
+    [isControlled, onOpenChange],
+  );
   const [key, setKey] = useState(0);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const dragging = useRef(false);
   const t = useTranslations("aiChat");
 
+  // Bump key whenever the sheet transitions from closed to open so chat panel re-mounts.
+  useEffect(() => {
+    if (open) setKey((k) => k + 1);
+  }, [open]);
+
   const handleOpen = useCallback(() => {
-    setKey((k) => k + 1);
     setOpen(true);
-  }, []);
+  }, [setOpen]);
 
   // Drag-to-resize handler
   const onPointerDown = useCallback((e: React.PointerEvent) => {
@@ -53,16 +76,18 @@ export function AiChatSheet({ context }: AiChatSheetProps) {
   return (
     <>
       {/* Floating AI button */}
-      <button
-        onClick={handleOpen}
-        className="fixed bottom-6 right-6 z-40 flex items-center justify-center size-14 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-105 transition-all duration-300 group"
-        title={t("floatButtonLabel")}
-      >
-        <Sparkles
-          strokeWidth={1.5}
-          className="size-6 group-hover:rotate-12 transition-transform duration-300"
-        />
-      </button>
+      {!hideFloatingButton && (
+        <button
+          onClick={handleOpen}
+          className="fixed bottom-6 right-6 z-40 flex items-center justify-center size-14 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-105 transition-all duration-300 group"
+          title={t("floatButtonLabel")}
+        >
+          <Sparkles
+            strokeWidth={1.5}
+            className="size-6 group-hover:rotate-12 transition-transform duration-300"
+          />
+        </button>
+      )}
 
       {/* Sheet */}
       <Sheet open={open} onOpenChange={setOpen}>
@@ -82,7 +107,13 @@ export function AiChatSheet({ context }: AiChatSheetProps) {
           <SheetHeader className="px-4 pt-4 pb-2 border-b border-border">
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="text-xs uppercase">
-                {context.type === "deal" ? t("sheetTitleDeal") : context.type === "order" ? t("sheetTitleOrder") : t("sheetTitleContact")}
+                {context.type === "deal"
+                  ? t("sheetTitleDeal")
+                  : context.type === "order"
+                    ? t("sheetTitleOrder")
+                    : context.type === "account"
+                      ? t("sheetTitleAccount")
+                      : t("sheetTitleContact")}
               </Badge>
               <SheetTitle className="text-sm truncate">
                 {context.label}

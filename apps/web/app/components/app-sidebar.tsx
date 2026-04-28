@@ -3,6 +3,7 @@
 import {
   LayoutDashboard,
   Users,
+  Building2,
   Handshake,
   GitCommitVertical,
   MessageSquare,
@@ -19,6 +20,7 @@ import { ThemeToggle } from "./theme-toggle";
 const navItems = [
   { key: "dashboard" as const, href: "/dashboard" as const, icon: LayoutDashboard },
   { key: "contacts" as const, href: "/contacts" as const, icon: Users },
+  { key: "accounts" as const, href: "/accounts" as const, icon: Building2 },
   { key: "deals" as const, href: "/deals" as const, icon: Handshake },
   { key: "products" as const, href: "/products" as const, icon: Package },
   { key: "orders" as const, href: "/orders" as const, icon: ShoppingCart },
