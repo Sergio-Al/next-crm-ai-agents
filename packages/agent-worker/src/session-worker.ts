@@ -1,13 +1,14 @@
 import { Worker, Queue } from "bullmq";
-import { Redis } from "ioredis";
+import { createRedisConnection } from "./redis.js";
 import { generateText } from "ai";
 import { createProvider } from "./llm-client.js";
 import { createDb } from "@crm-agent/shared/db";
 import { eq } from "drizzle-orm";
 import * as schema from "@crm-agent/shared/db/schema";
 import { parseDuration } from "./utils/parse-duration.js";
+import { publishEvent, expireSessionStream } from "./stream-emitter.js";
+import type { SseEvent } from "@crm-agent/shared/types/events";
 
-const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const DATABASE_URL =
   process.env.DATABASE_URL ??
   process.env.POSTGRES_URL ??
@@ -30,6 +31,7 @@ async function addEvent(data: {
   stepIndex?: number;
   type: string;
   data?: Record<string, unknown>;
+  sseEvent?: SseEvent;
 }) {
   const db = getDb();
   await db.insert(schema.sessionEvents).values({
@@ -38,6 +40,25 @@ async function addEvent(data: {
     type: data.type,
     data: data.data ?? {},
   });
+  if (data.sseEvent) {
+    try {
+      await publishEvent(`session:${data.sessionId}`, data.sseEvent);
+    } catch (err) {
+      console.error(`[SessionWorker] publishEvent failed:`, err);
+    }
+  }
+}
+
+async function emitFinish(sessionId: string, finishReason: string) {
+  try {
+    await publishEvent(`session:${sessionId}`, {
+      type: "finish",
+      finishReason,
+    });
+    await expireSessionStream(`session:${sessionId}`);
+  } catch (err) {
+    console.error(`[SessionWorker] emitFinish failed:`, err);
+  }
 }
 
 async function updateSession(
@@ -70,11 +91,11 @@ async function enqueueNextStep(
 }
 
 export function startSessionWorker() {
-  const connection = new Redis(REDIS_URL, { maxRetriesPerRequest: null });
+  const connection = createRedisConnection();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const queue = new Queue("session-steps", {
-    connection: new Redis(REDIS_URL, { maxRetriesPerRequest: null }) as any,
+    connection: createRedisConnection() as any,
   });
 
   const worker = new Worker(
@@ -105,7 +126,12 @@ export function startSessionWorker() {
       if (stepIndex >= plan.length) {
         // All steps done
         await updateSession(sessionId, { status: "completed" });
-        await addEvent({ sessionId, type: "session_completed" });
+        await addEvent({
+          sessionId,
+          type: "session_completed",
+          sseEvent: { type: "session_completed" },
+        });
+        await emitFinish(sessionId, "session_completed");
         console.log(`[SessionWorker] Session ${sessionId} completed`);
         return;
       }
@@ -118,6 +144,12 @@ export function startSessionWorker() {
         stepIndex,
         type: "step_started",
         data: { stepType: step.type, description: step.description },
+        sseEvent: {
+          type: "step_started",
+          stepIndex,
+          stepType: step.type,
+          description: step.description,
+        },
       });
 
       await updateSession(sessionId, { currentStepIndex: stepIndex });
@@ -151,6 +183,13 @@ export function startSessionWorker() {
               stepIndex,
               type: "crm_action_result",
               data: result,
+              sseEvent: {
+                type: "crm_action_result",
+                stepIndex,
+                action: result.action,
+                description: result.description,
+                executedAt: result.executedAt,
+              },
             });
             await updateSession(sessionId, { context: ctx });
             await enqueueNextStep(queue, sessionId, stepIndex + 1);
@@ -165,14 +204,33 @@ export function startSessionWorker() {
                 where: eq(schema.workspaceMembers.workspaceId, workspaceId),
               });
               if (member) {
-                await db.insert(schema.notifications).values({
-                  workspaceId,
-                  userId: member.userId,
-                  type: "session_notification",
-                  title: step.description,
-                  body: `Session: ${session.goal}`,
-                  metadata: { sessionId, stepIndex },
-                });
+                const [inserted] = await db
+                  .insert(schema.notifications)
+                  .values({
+                    workspaceId,
+                    userId: member.userId,
+                    type: "session_notification",
+                    title: step.description,
+                    body: `Session: ${session.goal}`,
+                    metadata: { sessionId, stepIndex },
+                  })
+                  .returning();
+                if (inserted) {
+                  try {
+                    await publishEvent(`user:${member.userId}`, {
+                      type: "notification",
+                      id: inserted.id,
+                      notificationType: inserted.type,
+                      title: inserted.title,
+                      body: inserted.body ?? null,
+                      link: inserted.link ?? null,
+                      createdAt: (inserted.createdAt ?? new Date()).toISOString(),
+                      metadata: (inserted.metadata as Record<string, unknown>) ?? {},
+                    });
+                  } catch (err) {
+                    console.error("[SessionWorker] notify publishEvent failed:", err);
+                  }
+                }
               }
             }
             await addEvent({
@@ -180,6 +238,11 @@ export function startSessionWorker() {
               stepIndex,
               type: "step_completed",
               data: { stepType: "notify" },
+              sseEvent: {
+                type: "step_completed",
+                stepIndex,
+                stepType: "notify",
+              },
             });
             await enqueueNextStep(queue, sessionId, stepIndex + 1);
             break;
@@ -199,6 +262,13 @@ export function startSessionWorker() {
               stepIndex,
               type: "wait_scheduled",
               data: { duration: durationStr, delayMs, nextRunAt: nextRunAt.toISOString() },
+              sseEvent: {
+                type: "wait_scheduled",
+                stepIndex,
+                duration: durationStr,
+                delayMs,
+                nextRunAt: nextRunAt.toISOString(),
+              },
             });
             // Enqueue the next step with the delay
             await enqueueNextStep(queue, sessionId, stepIndex + 1, delayMs);
@@ -220,6 +290,11 @@ export function startSessionWorker() {
               stepIndex,
               type: "ai_reasoning",
               data: { reasoningText: text },
+              sseEvent: {
+                type: "ai_reasoning",
+                stepIndex,
+                reasoningText: text,
+              },
             });
             await updateSession(sessionId, { context: ctx });
             await enqueueNextStep(queue, sessionId, stepIndex + 1);
@@ -233,6 +308,11 @@ export function startSessionWorker() {
               stepIndex,
               type: "human_checkpoint_requested",
               data: { description: step.description },
+              sseEvent: {
+                type: "human_checkpoint_requested",
+                stepIndex,
+                description: step.description,
+              },
             });
             // Stop here — user must resolve via API
             const workspaceId = session.workspaceId;
@@ -241,15 +321,34 @@ export function startSessionWorker() {
                 where: eq(schema.workspaceMembers.workspaceId, workspaceId),
               });
               if (member) {
-                await db.insert(schema.notifications).values({
-                  workspaceId,
-                  userId: member.userId,
-                  type: "human_checkpoint",
-                  title: `Approval needed: ${step.description}`,
-                  body: `Session "${session.goal}" requires your input.`,
-                  link: `/sessions/${sessionId}`,
-                  metadata: { sessionId, stepIndex },
-                });
+                const [inserted] = await db
+                  .insert(schema.notifications)
+                  .values({
+                    workspaceId,
+                    userId: member.userId,
+                    type: "human_checkpoint",
+                    title: `Approval needed: ${step.description}`,
+                    body: `Session "${session.goal}" requires your input.`,
+                    link: `/sessions/${sessionId}`,
+                    metadata: { sessionId, stepIndex },
+                  })
+                  .returning();
+                if (inserted) {
+                  try {
+                    await publishEvent(`user:${member.userId}`, {
+                      type: "notification",
+                      id: inserted.id,
+                      notificationType: inserted.type,
+                      title: inserted.title,
+                      body: inserted.body ?? null,
+                      link: inserted.link ?? null,
+                      createdAt: (inserted.createdAt ?? new Date()).toISOString(),
+                      metadata: (inserted.metadata as Record<string, unknown>) ?? {},
+                    });
+                  } catch (err) {
+                    console.error("[SessionWorker] checkpoint publishEvent failed:", err);
+                  }
+                }
               }
             }
             break;
@@ -263,7 +362,16 @@ export function startSessionWorker() {
             stepIndex,
             type: "step_completed",
             data: { stepType: step.type },
+            sseEvent: {
+              type: "step_completed",
+              stepIndex,
+              stepType: step.type,
+            },
           });
+        }
+        // Emit finish when waiting on human (terminal until resumed)
+        if (step.type === "human_checkpoint") {
+          await emitFinish(sessionId, "human_checkpoint_requested");
         }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : String(err);
@@ -273,8 +381,14 @@ export function startSessionWorker() {
           stepIndex,
           type: "step_failed",
           data: { error: errorMessage },
+          sseEvent: {
+            type: "step_failed",
+            stepIndex,
+            error: errorMessage,
+          },
         });
         await updateSession(sessionId, { status: "failed" });
+        await emitFinish(sessionId, "step_failed");
       }
     },
     {
@@ -290,6 +404,10 @@ export function startSessionWorker() {
 
   worker.on("failed", (job, err) => {
     console.error(`[SessionWorker] Job ${job?.id} failed:`, err.message);
+  });
+
+  worker.on("error", (err) => {
+    console.error("[SessionWorker] connection error:", err.message);
   });
 
   console.log("[SessionWorker] Session step worker started");

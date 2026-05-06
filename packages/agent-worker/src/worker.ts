@@ -1,5 +1,5 @@
 import { Worker } from "bullmq";
-import { Redis } from "ioredis";
+import { createRedisConnection } from "./redis.js";
 import { streamText } from "ai";
 import { createProvider } from "./llm-client.js";
 import { publishEvent } from "./stream-emitter.js";
@@ -8,12 +8,13 @@ import { loadSkills } from "./skill-loader.js";
 import { pluginManager } from "./hooks.js";
 import { startSessionWorker } from "./session-worker.js";
 import { startEmbeddingWorker } from "./embedding-worker.js";
+import { startOrderOpsWorker } from "./order-ops-worker.js";
+// import { startProactiveScannerWorker } from "./proactive-scanner.js"; // temporarily disabled
 import type { SseEvent } from "@crm-agent/shared/types/events";
 
-const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const CONCURRENCY = parseInt(process.env.WORKER_CONCURRENCY ?? "5", 10);
 
-const connection = new Redis(REDIS_URL, { maxRetriesPerRequest: null });
+const connection = createRedisConnection();
 
 const worker = new Worker(
   "agent-jobs",
@@ -33,13 +34,15 @@ const worker = new Worker(
     // Load conversation history from PostgreSQL
     const history = await loadConversationHistory(sessionKey);
 
-    // Load applicable skills (returns AI SDK-compatible tool definitions)
-    const skills = await loadSkills(workspaceId);
+    // Load applicable skills (returns AI SDK-compatible tool definitions
+    // and a system prompt assembled from each skill's SKILL.md).
+    const { tools, systemPrompt } = await loadSkills(workspaceId);
 
     try {
       const DEFAULT_MODEL = process.env.DEFAULT_MODEL ?? "openai/gpt-4o";
       const result = streamText({
         model: createProvider(model ?? DEFAULT_MODEL),
+        system: systemPrompt || undefined,
         messages: [...history, {
           role: "user" as const,
 
@@ -48,7 +51,7 @@ const worker = new Worker(
             text: message
           }]
         }],
-        tools: skills,
+        tools,
         maxSteps: 10,
 
         onStepFinish: async (step) => {
@@ -163,8 +166,17 @@ worker.on("failed", (job, err) => {
   console.error(`[Worker] Job ${job?.id} failed:`, err.message);
 });
 
+worker.on("error", (err) => {
+  console.error("[Worker] connection error:", err.message);
+});
+
 console.log(`[Worker] Agent worker started (concurrency: ${CONCURRENCY})`);
 
 // Start the session step worker alongside the agent-jobs worker
 startSessionWorker();
 startEmbeddingWorker();
+startOrderOpsWorker();
+// Proactive scanner temporarily disabled
+// startProactiveScannerWorker().catch((err) => {
+//   console.error("[Worker] Failed to start proactive scanner:", err);
+// });

@@ -8,6 +8,41 @@
       "when": 1773369541972,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777464552993,
+      "tag": "0001_true_hobgoblin",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777474007770,
+      "tag": "0002_complete_scorpion",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777553060444,
+      "tag": "0003_cloudy_ben_parker",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777554160823,
+      "tag": "0004_military_thunderbolt",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1778088126743,
+      "tag": "0005_organic_whizzer",
+      "breakpoints": true
     }
   ]
 }

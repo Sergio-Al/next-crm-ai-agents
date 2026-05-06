@@ -24,6 +24,13 @@ packages/
   channel-adapters/→ Channel adapter layer
 services/
   kafka-sync/      → Python CDC sync service (SuiteCRM → TimescaleDB)
+skills/            → Agent-worker skills (SKILL.md + tools.ts per folder)
+  crm/             → CRM tools (search/log activity, semantic product search)
+  design-tokens/   → Design system context (no tools)
+  i18n/            → i18n conventions (no tools)
+  openui/          → openui-lang conventions (no tools)
+  custom/          → Template — ignored by the loader
+  browser/         → Stub — ignored by the loader
 infra/
   docker-compose.yml        → TimescaleDB + pgvector, PgBouncer, Redis
   docker-swarmkafka.yml     → Kafka stack (KRaft, Kafka Connect + Debezium, Kafka UI)
@@ -198,7 +205,56 @@ The platform ingests SuiteCRM data via Debezium → Kafka → a Python sync serv
 
 ### Topics consumed
 
-`crm.{TENANT}.{entity}.updated` — `account`, `account-cstm`, `account-contact`, `contact`, `email-address`, `email-rel`, `product`, `product-cstm`, `product-quote`, `invoice`, `pedido` (HANPE_Pedidos), `task`, `modelo`, `modelo-product`, `stock`. Routing is configured in [sqlserver-cdc.json](sqlserver-cdc.json).
+`crm.{TENANT}.{entity}.updated` — `account`, `account-cstm`, `account-contact`, `contact`, `email-address`, `email-rel`, `product`, `product-cstm`, `product-quote`, `invoice`, `pedido` (HANPE_Pedidos), `task`, `modelo`, `modelo-product`, `stock`, `relacion` (HANA_Relaciones), `relacion-account` (hana_relaciones_accounts_c). Routing is configured in [sqlserver-cdc.json](sqlserver-cdc.json).
+
+> **Route regex anchors:** when two CDC tables share a prefix (e.g. `hana_relaciones` vs `hana_relaciones_accounts_c`), the RegexRouter regex for the shorter name **must** end with `$` or it will also match the longer name and hijack its events into the wrong topic.
+
+### Account type fields
+
+The `crm_accounts` table stores two separate account-type values from different SuiteCRM source tables:
+
+- **`source_account_type`** — from `accounts.account_type` (the base SuiteCRM table). e.g. `"Medical"`, `"Analyst"`. Populated by the `account` topic transformer.
+- **`tipo_cuenta`** — from `accounts_cstm.tipocuenta_c` (the custom-fields extension table). e.g. `"Empresa"`, `"Persona Natural"`. Populated by the `account-cstm` topic transformer.
+
+Both fields are included in the account embedding text, so semantic searches cover both type vocabularies.
+
+> **COALESCE on cstm upserts:** the `_handle_account_cstm` handler uses `COALESCE(new_value, existing_value)` for all nullable custom columns (`nombre_comercial`, `nit_ci`, `condicion_pago`, `tipo_cuenta`, `limite_credito`, etc.) to prevent a NULL snapshot from overwriting previously-synced values.
+
+### Account embeddings
+
+Account embeddings use the same `vector(1536)` + pgvector pipeline as products:
+
+- **Column** — `crm_accounts.embedding vector(1536)`
+- **Index** — `IX_crm_accounts_embedding_hnsw` (HNSW, m=8, ef=32, cosine ops)
+- **Embed text** — concatenation of `name`, `nombre_comercial`, `industry`, `tipo_cuenta`, `source_account_type`, `categoria_ventas`, `condicion_pago`, `zona_ventas`, `id_regional`, tags, `tipo_relacion`, `custom_fields->>'address'`, `custom_fields->>'city'`
+- **Pipeline** — after each account upsert, `_enqueue_account_embedding` pushes a job to `account-embeddings:pending` (Redis list) → relay → `account-embeddings` BullMQ queue → TypeScript worker writes embedding to DB
+- **Tools** — `search_accounts_similar` (free-form semantic/geographic) and `find_similar_accounts` (peer lookup by accountId)
+
+To backfill embeddings for all existing accounts (e.g. after adding new fields to the embed text):
+
+```bash
+docker exec crm-agent-postgres psql -U platform -d platform -At -c "
+SELECT 'RPUSH account-embeddings:pending ' || quote_literal(json_build_object(
+  'accountId', id::text,
+  'text', trim(concat_ws(' ',
+    name, nombre_comercial, industry, tipo_cuenta, source_account_type,
+    categoria_ventas, condicion_pago, zona_ventas, id_regional,
+    array_to_string(coalesce(tags, '{}'), ' '),
+    coalesce(relacion_principal->>'tipo_relacion', ''),
+    coalesce(custom_fields->>'address', ''),
+    coalesce(custom_fields->>'city', '')
+  ))
+)::text)
+FROM crm_accounts
+WHERE trim(coalesce(name,'')) <> ''
+" | docker exec -i crm-agent-redis redis-cli --no-auth-warning
+```
+
+### Account enrichment from `hana_relaciones`
+
+`hana_relaciones` rows are tier-0 (root) and cached in a `_sync_relacion_lookup` table keyed by `(workspace_id, external_id)` with the fields needed to enrich accounts: `zona_ventas`, `id_regional`, and a `relacion_principal` jsonb (carries `tipo_relacion`, `principal`, plus the four `_RELACION_LOOKUP_FIELDS`: `iddivision_c`, `idamercado_c`, `idcanalvta_c`, `idgrupocliente_c`).
+
+`hana_relaciones_accounts_c` is tier-1 (junction): for each event the handler resolves the linked `crm_accounts` row by `external_id` and merges the cached relacion fields onto it (`zona_ventas`, `id_regional` via `COALESCE`, and `relacion_principal` via jsonb concat). When the relacion isn't cached yet, a DB fallback against `_sync_relacion_lookup` covers cross-batch ordering. Genuine misses are counted in the FK skip summary as `relacion-account:relacion_not_found` and `crm_accounts:fk_not_found` (the latter is expected for orphan junction rows whose underlying account was deleted in SuiteCRM).
 
 ### Dev workflow
 
@@ -208,6 +264,31 @@ tail -f logs/kafka-sync.log
 ```
 
 The service writes a rotating log to `logs/kafka-sync.log` (20 MB × 5 backups) and also streams to stderr. Override the path with `KAFKA_SYNC_LOG_FILE`.
+
+### Stopping the sync service
+
+The service installs `SIGINT`/`SIGTERM` handlers and the poll loop checks the shutdown flag every `timeout` seconds (default `1s`), so it shuts down cleanly on `Ctrl+C` — committing offsets, flushing the pending batch, and closing the consumer + DB.
+
+**Caveat on Windows (Git Bash / pnpm):** when started via `pnpm sync:dev`, `Ctrl+C` is delivered to the `pnpm`/shell wrapper rather than the Python child, and the `python.exe` process keeps running in the background (you'll keep seeing upserts in `logs/kafka-sync.log`). To kill a stranded process:
+
+```bash
+# Git Bash / MSYS — note the double slashes
+tasklist //FI "IMAGENAME eq python.exe"
+taskkill //F //PID <pid>
+
+# Or, kill all python processes (only safe if no other Python is running)
+taskkill //F //IM python.exe
+```
+
+```powershell
+# PowerShell / cmd.exe equivalents
+Get-Process python | Format-Table Id, StartTime, Path
+Stop-Process -Id <pid> -Force
+# or
+taskkill /F /IM python.exe
+```
+
+On Linux/macOS, `pkill -f services/kafka-sync/main.py` works. To avoid the wrapper issue entirely, run `python services/kafka-sync/main.py` directly in the terminal where you want `Ctrl+C` to take effect.
 
 ### Order lifecycle
 
@@ -288,6 +369,12 @@ Ask the assistant to work with contacts, deals, products, orders, and pipeline s
 
 - **Search contacts** — *"Find contacts at Acme Corp"*, *"Look up john@example.com"*
 - **View contact details** — *"Show me details for Jane Smith"* (includes linked deals and orders)
+- **Search accounts (fuzzy/keyword)** — *"buscar cuenta 10 de mayo"*, *"farmacia milennium"* — typos and partial/reordered words still find the right account thanks to a `pg_trgm` similarity fallback. The assistant confirms the chosen account before continuing when fuzzy matching was used.
+- **Semantic account search** — *"farmacias rurales en Santa Cruz"*, *"cuentas mayoristas con condición contado"*, *"clientes de montero santa cruz"*, *"cuentas en la zona de sopocachi"* — uses pgvector cosine similarity over embedded account profiles (name, type, segment, address, city, industry, etc.) to find the best semantic matches.
+- **Similar accounts** — *"cuentas parecidas a esta"*, *"find me 5 customers with a similar profile to this account"* — pass a known `accountId` to get the closest pgvector neighbors.
+- **Top accounts by orders** — *"top accounts by revenue"*, *"cuentas con más pedidos este año"* — ranked by order count or revenue with optional date window and status filter.
+- **Account 360° view** — *"Show me account [name]"* renders a rich card with contacts, deals, order stats, and recent orders in one view.
+- **Order anomalies** — *"Show me stuck or overdue orders"*, *"¿Hay pedidos atrasados para esta cuenta?"* — surfaces overdue deliveries, stuck-confirmed orders, and SAP sync errors grouped by severity.
 - **Create contacts** — *"Add a new contact: John Doe, john@acme.com, works at Acme"*
   - A form card appears for you to review and edit before confirming
 - **Search deals** — *"Show me all open deals"*, *"Find deals worth over $50k"*
@@ -296,8 +383,9 @@ Ask the assistant to work with contacts, deals, products, orders, and pipeline s
 - **Move deals** — *"Move the Acme deal to Negotiation stage"*
   - A confirmation card shows current → new stage before applying
 - **Search products** — *"Show me all software products"*, *"Find products in the Support category"*
-- **Create orders** — *"Create an order for James Rodriguez"*
+- **Create orders** — *"Create an order for James Rodriguez"*, *"Crear un pedido para esta cuenta"*
   - A form card appears for review before confirming
+  - When called with an `accountId` or `contactId` and no pre-filled items, the form **auto-fetches AI product suggestions** from purchase history and pre-populates the line items (marked with an "AI" badge) so you can confirm or tweak before submitting
 - **Order history** — *"Show me the order history for James Rodriguez"*
 - **AI product suggestions** — *"What products should I recommend to this contact?"*
   - Uses RAG-based semantic search on purchase history to suggest relevant products
@@ -379,6 +467,140 @@ Contact detail pages (`/contacts/[id]`) show a **Related Orders** section alongs
 
 ---
 
+---
+
+## Tools Registry (Admin)
+
+The platform ships with 24 hardcoded chat tools defined in [apps/web/app/api/chat/route.ts](apps/web/app/api/chat/route.ts). The **Tools Registry** lets admins extend the assistant with **HTTP-backed tools** without writing code or redeploying — and toggle existing tools on/off per workspace.
+
+### Built-in Chat Tools
+
+**HITL** = Human-in-the-loop: these tools render a form or confirmation card in the chat UI and write nothing until the user explicitly confirms.
+
+| Tool | Category | Type | Description |
+|---|---|---|---|
+| `searchContacts` | Contacts | Read | Full-text search across name, email, and company |
+| `getContact` | Contacts | Read | Fetch full contact profile including linked deals |
+| `searchAccounts` | Accounts | Read | Search accounts by name, domain, industry, or SAP ID. Falls back to **trigram fuzzy matching** (pg_trgm) when ILIKE finds nothing, so typos and reordered words still match. Result includes `fuzzy: true` flag when fallback was used. |
+| `search_accounts_similar` | Accounts | Read | Semantic pgvector search over account profiles by natural-language description — segments, types, payment terms, zone, region, industry, or **geographic location** (city, neighborhood, department). e.g. *"farmacias rurales en Santa Cruz"*, *"clientes de montero"*, *"cuentas en zona sopocachi"* |
+| `find_similar_accounts` | Accounts | Read | Find accounts most similar to a specific known account (pgvector cosine neighbors). Pass a known `accountId`; also feeds `crossSellFromPeers` and `suggestProducts` at the account level. |
+| `getTopAccountsByOrders` | Accounts | Read | Ranked account list by order count or revenue. Pass `sortBy='revenue'` for revenue ranking, `status='confirmed'` to exclude drafts/cancelled. Supports optional `city` and `zone` params for geographic scoping (e.g. "en Cochabamba" → `city: "Cochabamba"`). Only pass date window when the user explicitly requests one. |
+| `getAccount` | Accounts | Read | Fetch account detail with contacts and orders |
+| `searchDeals` | Deals | Read | Search deals by title or status (`open` / `won` / `lost`) |
+| `listPipelineStages` | Deals | Read | List all pipeline stages with IDs — used when creating or moving deals |
+| `previewCreateContact` | Contacts | HITL | Show create-contact form for review before saving |
+| `previewLogActivity` | Contacts | HITL | Show log-activity form before posting |
+| `previewCreateDeal` | Deals | HITL | Show create-deal form for review before saving |
+| `previewUpdateDealStage` | Deals | HITL | Show stage-move confirmation before applying |
+| `previewCreateSession` | Sessions | HITL | Show session plan card for review before starting |
+| `getSessionStatus` | Sessions | Read | Fetch session progress and recent step events |
+| `searchProducts` | Products | Read | Strict lookup by exact SKU code or category name — not for natural-language queries |
+| `search_products_similar` | Products | Read | Semantic vector search for products by natural-language description |
+| `getOrderHistory` | Orders | Read | Fetch order history for a contact with line items |
+| `getOrderStatus` | Orders | Read | Get current status and details for a specific order |
+| `suggestProducts` | Orders | Read | AI product recommendations via centroid similarity, text-profile, or popularity fallback |
+| `crossSellFromPeers` | Orders | Read | Cross-sell suggestions derived from orders of similar peer accounts |
+| `previewCreateOrder` | Orders | HITL | Show create-order form for review before saving. When invoked with an `accountId` (or `contactId`) and no pre-filled items, the form **auto-fetches AI product suggestions** client-side via `/api/orders/suggest` and pre-populates the line items, marked with an "AI" badge. |
+| `previewUpdateOrderStatus` | Orders | HITL | Show status-change confirmation before applying (`draft → confirmed → shipped → delivered`) |
+| `detectOrderAnomalies` | Orders | Read | Detect stuck/overdue/SAP-error orders for an account or contact (overdue delivery, stuck-confirmed > 7d, SAP sync error states), grouped by anomaly type with severity (warning/critical). Supports optional `city` and `zone` params for geographic scoping. |
+| `analyzeRepurchaseGap` | Orders | Read | Find accounts that bought a specific product but have not reordered within N days. Useful for lapsed-customer follow-up campaigns. Supports optional `city` and `zone` params for geographic scoping. |
+| `prioritizeVisits` | Accounts | Read | Composite SQL score (revenue + open deals + anomaly count + recency) to rank accounts for visit. Supports optional `city` and `zone` filters. |
+| `analyzeRepurchaseProbability` | Accounts | Read | RFM scoring (Recency, Frequency, Monetary) via SQL window functions; ranks accounts by repurchase likelihood. |
+| `previewRescheduleDeliveries` | Orders | HITL | Show confirmation card before bulk-rescheduling all deliveries for a given date; enqueues a BullMQ job on confirm. |
+
+### What you can do at `/admin/tools`
+
+- **List all registered tools** — name, kind (`static` / `http` / `query`), HITL flag, enabled state, last updated
+- **Enable/disable** any tool with a single click — takes effect on the next chat request, no restart needed
+- **Create new HTTP tools** — wire any external REST API (SAP, webhooks, internal services) into the chat agent via a form
+- **Edit tool metadata** — description and `systemPromptHint` (the sentence that steers the LLM toward this tool) are editable for non-static tools
+- **View usage analytics** — last-7-day call count, error count, and p95 latency per tool, sourced from the existing `tool_calls` table
+
+Static tools (the 28 code-defined ones) appear in the list as read-only — they can be toggled on/off but their config lives in source code.
+
+### Creating an HTTP tool
+
+The "New HTTP tool" form captures everything the runtime needs:
+
+- **Name** — exact tool name the LLM will see (e.g. `getSapInvoice`)
+- **Description** — passed to the LLM as the tool's purpose
+- **System-prompt hint** — appended to `CRM_INSTRUCTIONS` under a `## Custom Tools` section so the model knows when to invoke this tool
+- **Input parameters** — name + type (`string` / `number` / `boolean` / `enum`) + optional flag + description, compiled into a Zod schema at request time
+- **HTTP config** — URL with `{{argName}}` interpolation, method (GET/POST/PUT/DELETE), static headers (JSON), and an optional body template for POST/PUT
+- **Enabled** + **HITL** toggles
+
+### Security: SSRF allowlist
+
+HTTP tools cannot reach arbitrary URLs. Each workspace has an **allowlist of URL prefixes** stored in `workspaces.settings.httpToolAllowlist`. Before each fetch, the executor verifies the (interpolated) target URL starts with one of the allowed prefixes — anything else is rejected with `URL not in workspace allowlist`. This prevents SSRF against internal metadata endpoints, localhost, etc.
+
+To add a host:
+
+```sql
+UPDATE workspaces
+SET settings = jsonb_set(
+  COALESCE(settings, '{}'::jsonb),
+  '{httpToolAllowlist}',
+  '["https://api.example.com/"]'::jsonb
+);
+```
+
+### Architecture
+
+| Piece | Path |
+|---|---|
+| Schema (extended `tools` table) | [packages/shared/src/db/schema.ts](packages/shared/src/db/schema.ts) |
+| Zod compiler (jsonb → `z.object`) | [apps/web/app/lib/tools/zod-from-schema.ts](apps/web/app/lib/tools/zod-from-schema.ts) |
+| HTTP executor (interpolation + SSRF) | [apps/web/app/lib/tools/http-executor.ts](apps/web/app/lib/tools/http-executor.ts) |
+| Dynamic loader (DB → AI SDK tools) | [apps/web/app/lib/tools/dynamic-loader.ts](apps/web/app/lib/tools/dynamic-loader.ts) |
+| API: list + create | [apps/web/app/api/tools/route.ts](apps/web/app/api/tools/route.ts) |
+| API: detail + update + delete | [apps/web/app/api/tools/[id]/route.ts](apps/web/app/api/tools/[id]/route.ts) |
+| API: analytics | [apps/web/app/api/tools/analytics/route.ts](apps/web/app/api/tools/analytics/route.ts) |
+| Admin UI | [apps/web/app/[locale]/(app)/admin/tools/](apps/web/app/[locale]/(app)/admin/tools) |
+
+The chat route loads enabled HTTP tools per request (`loadDynamicTools`), spreads them alongside the hardcoded code-tools, and concatenates each tool's `systemPromptHint` into the system prompt. Code-tools win on name collisions.
+
+The `tools` table stores three `kind`s: `static` (handler in code), `http` (external REST), and `query` (visual builder — column reserved, executor deferred). Soft-delete via `deletedAt`. Per-workspace scoping via `workspaceId` (null = global).
+
+---
+
+## Agent Worker Skills
+
+The **agent-worker** loads its tools and system-prompt context dynamically from the [skills/](skills/) folder at the workspace root. Each subfolder is one skill:
+
+```
+skills/<name>/
+  SKILL.md     # Markdown context — concatenated into the worker's system prompt
+  tools.ts     # Optional — exports `createTools(workspaceId)` returning AI SDK tools
+```
+
+[packages/agent-worker/src/skill-loader.ts](packages/agent-worker/src/skill-loader.ts) walks `skills/`, reads each `SKILL.md`, and dynamically imports each `tools.ts` to register tools with the AI SDK. Folders named `custom` and `browser` are skipped.
+
+### Adding a new skill
+
+1. Create `skills/<name>/SKILL.md` describing the skill (becomes part of the system prompt).
+2. Optionally add `skills/<name>/tools.ts`:
+   ```ts
+   import type { CoreTool } from "ai";
+   import { z } from "zod/v3";
+
+   export function createTools(workspaceId?: string): Record<string, CoreTool> {
+     return {
+       my_tool: {
+         description: "...",
+         inputSchema: z.object({ /* ... */ }),
+         execute: async (args) => { /* ... */ },
+       },
+     };
+   }
+   ```
+3. Restart the agent-worker — no other code changes needed.
+
+Override the skills directory location with the `SKILLS_DIR` env var. The worker container ships the `skills/` folder and runs via `tsx` so dynamic `.ts` imports work in production.
+
+> **Note:** This is distinct from the web-app **Tools Registry** (above), which exposes hardcoded + DB-defined HTTP tools to the `/api/chat` route. The skills folder powers the **worker** that processes Agent Sessions on the BullMQ queue.
+
+---
+
 ## Agent Sessions
 
 Agent Sessions are long-running background processes that execute multi-step plans on your behalf — follow-up sequences, reminders, nurture campaigns, and more.
@@ -400,7 +622,9 @@ Before confirming, you can:
 - **Remove steps** you don't want (click the trash icon)
 - **Adjust wait durations** (edit the duration field on `wait` steps, e.g. `3d`, `12h`, `1w`)
 
-Click **Confirm & Start** to create the session and begin execution. A "View Session →" link appears once created.
+Click **Confirm & Start** to create the session and begin execution. After confirmation, the same chat card stays visible and shows a compact **live progress feed** inline as steps start, complete, wait, fail, or finish. A "View Session →" / "View full timeline →" link remains available for the full session detail page.
+
+For the clearest validation of the live feed, create a **new** session from chat with a short `wait` step. That gives you a clean event sequence from `step_started` through `session_completed` instead of attaching late to an existing run.
 
 ### Step Types
 
@@ -446,6 +670,18 @@ Ask the assistant about a running session:
 
 A compact **Session Status Card** appears showing goal, status, progress, and a link to the detail page.
 
+### Real-time Chat Progress
+
+When a session is created from chat, the confirmation card subscribes to a server-sent events stream and renders the last few execution events inline without requiring a page refresh. The live feed can show:
+
+- **Step started / completed** updates as each plan step runs
+- **Wait scheduled** events with the configured duration
+- **AI reasoning** as a collapsible block
+- **Human checkpoint** when the run pauses for approval
+- **Step failed** and **session completed** terminal states
+
+The stream closes automatically when the worker emits a terminal `finish` event or when the chat card unmounts.
+
 ### Architecture Notes
 
 - Sessions execute in the **agent-worker** on a dedicated `session-steps` BullMQ queue, separate from chat jobs
@@ -453,3 +689,4 @@ A compact **Session Status Card** appears showing goal, status, progress, and a 
 - `wait` steps use BullMQ's native **delayed jobs** — no cron or polling
 - A cancelled or paused session skips any pending jobs when they fire
 - The worker starts automatically alongside the existing agent-jobs worker
+- The worker mirrors session lifecycle events to **Redis Streams** and the web app exposes them to the browser over **SSE** (`/api/sessions/[id]/stream`) for inline chat updates

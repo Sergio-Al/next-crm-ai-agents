@@ -25,8 +25,9 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 3
 RETRY_BACKOFF = [1, 3, 10]  # seconds
 
-# Redis list consumed by the Node embedding relay in packages/agent-worker
+# Redis lists consumed by the Node embedding relays in packages/agent-worker
 EMBEDDING_PENDING_LIST = "product-embeddings:pending"
+ACCOUNT_EMBEDDING_PENDING_LIST = "account-embeddings:pending"
 
 
 class SyncHandler:
@@ -36,9 +37,12 @@ class SyncHandler:
         self.conn = None
         # In-memory lookup for email_addresses (id → email string)
         self._email_lookup: dict[str, str] = {}
+        self._relacion_lookup: dict[str, dict] = {}
         # Counters for FK / parent-not-found skips, flushed by consumer
         # at INFO after each batch commit. Key = (table, reason).
         self._skip_counts: dict[tuple[str, str], int] = defaultdict(int)
+        # Counters for successful account-contact links.
+        self._link_counts: dict[str, int] = defaultdict(int)
         # Redis for enqueuing product embedding jobs
         self.redis = None
         url = redis_url or os.getenv("REDIS_URL")
@@ -121,6 +125,10 @@ class SyncHandler:
             self._handle_email_rel(row)
         elif entity == "account-contact":
             self._handle_account_contact(row)
+        elif entity == "relacion":
+            self._handle_relacion(row)
+        elif entity == "relacion-account":
+            self._handle_relacion_account(row)
         elif entity == "pedido":
             self._upsert_pedido(row)
         elif entity == "task":
@@ -172,10 +180,11 @@ class SyncHandler:
             """
             INSERT INTO crm_accounts (
                 workspace_id, external_id, external_source,
-                name, industry, website, size, custom_fields
+                name, industry, website, size, source_account_type, custom_fields
             ) VALUES (
                 %(workspace_id)s, %(external_id)s, %(external_source)s,
                 %(name)s, %(industry)s, %(website)s, %(size)s,
+                %(source_account_type)s,
                 %(custom_fields)s::jsonb
             )
             ON CONFLICT (workspace_id, external_source, external_id)
@@ -185,12 +194,17 @@ class SyncHandler:
                 industry = EXCLUDED.industry,
                 website = EXCLUDED.website,
                 size = EXCLUDED.size,
+                source_account_type = EXCLUDED.source_account_type,
                 custom_fields = crm_accounts.custom_fields || EXCLUDED.custom_fields,
                 updated_at = NOW()
+            RETURNING id
             """,
             {**row, "custom_fields": json.dumps(row["custom_fields"])},
         )
+        result = cur.fetchone()
         cur.close()
+        if result:
+            self._enqueue_account_embedding(result[0], row["external_id"])
 
     def _upsert_invoice(self, row: dict):
         # Resolve FK: billing_account_id → crm_accounts.id
@@ -372,6 +386,48 @@ class SyncHandler:
         except Exception as e:
             logger.warning("Failed to enqueue embedding for %s: %s", external_id, e)
 
+    def _enqueue_account_embedding(self, account_id, external_id):
+        """Push a JSON payload to a Redis list for the Node account-embedding relay.
+
+        Embed text composes: name, nombre_comercial, industry, tipo_cuenta,
+        source_account_type, categoria_ventas, condicion_pago, zona_ventas,
+        id_regional, tags (joined), relacion_principal->>'tipo_relacion', and
+        the address/city from custom_fields (e.g. 'SOPOCACHI, LA PAZ, LA PAZ, Bolivia').
+        Skips when the composed text would be empty.
+        """
+        if self.redis is None:
+            return
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            SELECT
+                name, nombre_comercial, industry, tipo_cuenta, source_account_type,
+                categoria_ventas, condicion_pago, zona_ventas, id_regional,
+                array_to_string(coalesce(tags, '{}'::text[]), ' '),
+                coalesce(relacion_principal->>'tipo_relacion', ''),
+                coalesce(custom_fields->>'address', ''),
+                coalesce(custom_fields->>'city', '')
+            FROM crm_accounts
+            WHERE id = %s
+            LIMIT 1
+            """,
+            (account_id,),
+        )
+        r = cur.fetchone()
+        cur.close()
+        if not r:
+            return
+        text = " ".join(p for p in r if p and str(p).strip())
+        if not text.strip():
+            return
+        try:
+            self.redis.rpush(
+                ACCOUNT_EMBEDDING_PENDING_LIST,
+                json.dumps({"accountId": str(account_id), "text": text}),
+            )
+        except Exception as e:
+            logger.warning("Failed to enqueue account embedding for %s: %s", external_id, e)
+
     def _upsert_order_item(self, row: dict):
         # Resolve FK: parent_id → orders.id
         parent_ext = row.pop("_parent_id", None)
@@ -484,6 +540,10 @@ class SyncHandler:
         contact_ext_id = row.get("contact_id")
         account_ext_id = row.get("account_id")
         if not contact_ext_id or not account_ext_id:
+            logger.warning(
+                "account-contact row missing ids: contact_id=%s account_id=%s — skipped",
+                contact_ext_id, account_ext_id,
+            )
             return
 
         # Resolve account
@@ -496,10 +556,11 @@ class SyncHandler:
         cur.close()
 
         if not account:
-            logger.debug(
-                "Account %s not found for contact link %s",
+            logger.warning(
+                "account-contact: account %s not found (contact %s) — skipped",
                 account_ext_id, contact_ext_id,
             )
+            self._link_counts["account_not_found"] += 1
             return
 
         account_id, account_name = account
@@ -513,7 +574,144 @@ class SyncHandler:
             """,
             (account_id, account_name, contact_ext_id),
         )
+        affected = cur.rowcount
         cur.close()
+
+        if affected == 0:
+            logger.warning(
+                "account-contact: contact %s not found in DB (account %s) — no row updated",
+                contact_ext_id, account_ext_id,
+            )
+            self._link_counts["contact_not_found"] += 1
+        else:
+            logger.debug(
+                "account-contact: linked contact %s → account %s (%s)",
+                contact_ext_id, account_ext_id, account_name,
+            )
+            self._link_counts["linked"] += 1
+
+    def _handle_relacion(self, row: dict):
+        """Cache relation metadata for later junction-driven account updates."""
+        external_id = row.get("external_id")
+        if not external_id:
+            return
+
+        snapshot = {
+            "zona_ventas": row.get("zona_ventas"),
+            "id_regional": row.get("id_regional"),
+            "relacion_principal": row.get("relacion_principal") or {},
+        }
+        self._relacion_lookup[external_id] = snapshot
+
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO _sync_relacion_lookup (
+                workspace_id, external_id, zona_ventas, id_regional, relacion_principal, updated_at
+            ) VALUES (
+                %(workspace_id)s, %(external_id)s, %(zona_ventas)s, %(id_regional)s,
+                %(relacion_principal)s::jsonb, NOW()
+            )
+            ON CONFLICT (workspace_id, external_id) DO UPDATE SET
+                zona_ventas = EXCLUDED.zona_ventas,
+                id_regional = EXCLUDED.id_regional,
+                relacion_principal = EXCLUDED.relacion_principal,
+                updated_at = NOW()
+            """,
+            {
+                "workspace_id": row["workspace_id"],
+                "external_id": external_id,
+                "zona_ventas": snapshot["zona_ventas"],
+                "id_regional": snapshot["id_regional"],
+                "relacion_principal": json.dumps(snapshot["relacion_principal"]),
+            },
+        )
+        cur.close()
+
+    def _get_relacion_lookup(self, external_id: str | None) -> dict | None:
+        if not external_id:
+            return None
+
+        cached = self._relacion_lookup.get(external_id)
+        if cached is not None:
+            return cached
+
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            SELECT zona_ventas, id_regional, relacion_principal
+            FROM _sync_relacion_lookup
+            WHERE workspace_id = %s AND external_id = %s
+            LIMIT 1
+            """,
+            (self.workspace_id, external_id),
+        )
+        result = cur.fetchone()
+        cur.close()
+        if not result:
+            return None
+
+        relacion_principal = result[2] or {}
+        if isinstance(relacion_principal, str):
+            try:
+                relacion_principal = json.loads(relacion_principal)
+            except json.JSONDecodeError:
+                relacion_principal = {}
+
+        snapshot = {
+            "zona_ventas": result[0],
+            "id_regional": result[1],
+            "relacion_principal": relacion_principal,
+        }
+        self._relacion_lookup[external_id] = snapshot
+        return snapshot
+
+    def _handle_relacion_account(self, row: dict):
+        """Apply cached relation metadata to the linked account row."""
+        account_ext_id = row.get("account_external_id")
+        relacion_ext_id = row.get("relacion_external_id")
+        if not account_ext_id or not relacion_ext_id:
+            return
+
+        account_id = self._resolve_fk("crm_accounts", account_ext_id)
+        if account_id is None:
+            logger.debug(
+                "relacion-account skipped — account %s not found",
+                account_ext_id,
+            )
+            return
+
+        relacion = self._get_relacion_lookup(relacion_ext_id)
+        if relacion is None:
+            self._skip_counts[("relacion-account", "relacion_not_found")] += 1
+            logger.debug(
+                "relacion-account skipped — relacion %s not found",
+                relacion_ext_id,
+            )
+            return
+
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            UPDATE crm_accounts SET
+                zona_ventas = COALESCE(%(zona_ventas)s, zona_ventas),
+                id_regional = COALESCE(%(id_regional)s, id_regional),
+                relacion_principal = coalesce(relacion_principal, '{}'::jsonb) || %(relacion_principal)s::jsonb,
+                updated_at = NOW()
+            WHERE id = %(account_id)s
+            RETURNING id
+            """,
+            {
+                "account_id": account_id,
+                "zona_ventas": relacion.get("zona_ventas"),
+                "id_regional": relacion.get("id_regional"),
+                "relacion_principal": json.dumps(relacion.get("relacion_principal") or {}),
+            },
+        )
+        cur.fetchone()
+        cur.close()
+
+        self._enqueue_account_embedding(account_id, account_ext_id)
 
     # ── SuiteCRM-specific handlers ──────────────────────────────
 
@@ -527,7 +725,18 @@ class SyncHandler:
         cur.execute(
             """
             UPDATE crm_accounts SET
-                sap_account_id = %(sap_account_id)s,
+                sap_account_id = COALESCE(%(sap_account_id)s, sap_account_id),
+                nombre_comercial = COALESCE(%(nombre_comercial)s, nombre_comercial),
+                nit_ci = COALESCE(%(nit_ci)s, nit_ci),
+                categoria_ventas = COALESCE(%(categoria_ventas)s, categoria_ventas),
+                condicion_pago = COALESCE(%(condicion_pago)s, condicion_pago),
+                tipo_cuenta = COALESCE(%(tipo_cuenta)s, tipo_cuenta),
+                limite_credito = COALESCE(%(limite_credito)s, limite_credito),
+                bloqueo_entrega = %(bloqueo_entrega)s,
+                bloqueo_factura = %(bloqueo_factura)s,
+                lat = COALESCE(%(lat)s, lat),
+                lng = COALESCE(%(lng)s, lng),
+                relacion_principal = coalesce(relacion_principal, '{}'::jsonb) || %(relacion_principal)s::jsonb,
                 custom_fields = custom_fields || %(custom_fields)s::jsonb,
                 updated_at = NOW()
             WHERE workspace_id = %(workspace_id)s
@@ -535,7 +744,11 @@ class SyncHandler:
               AND external_id = %(external_id)s
             RETURNING id
             """,
-            {**row, "custom_fields": json.dumps(row["custom_fields"])},
+            {
+                **row,
+                "relacion_principal": json.dumps(row.get("relacion_principal") or {}),
+                "custom_fields": json.dumps(row["custom_fields"]),
+            },
         )
         result = cur.fetchone()
         cur.close()
@@ -560,6 +773,8 @@ class SyncHandler:
                 (row["workspace_id"], sap_id, account_id),
             )
             cur.close()
+
+        self._enqueue_account_embedding(account_id, row.get("external_id"))
 
     def _resolve_account_by_kunnr(self, kunnr: str | None) -> str | None:
         """Resolve crm_accounts.id from a SAP kunnr code.
@@ -624,6 +839,10 @@ class SyncHandler:
         products_quantity = row.pop("_products_quantity", None)
         contacto_sol_id = row.pop("_contacto_sol_id", None)
         estado_sync = row.pop("_estado_sync", None)
+        lat = row.pop("_lat", None)
+        lng = row.pop("_lng", None)
+        description = row.pop("_description", None)
+        created_at = row.pop("_created_at", None)
 
         account_id = self._resolve_account_by_kunnr(kunnr)
         # NOTE: hanpe_pedidos in this SuiteCRM tenant does not link to a
@@ -641,13 +860,15 @@ class SyncHandler:
                 number, status, currency,
                 subtotal, tax_amount, total_amount,
                 account_id, status_source, region_code, division_code,
-                confirmed_at, custom_fields
+                confirmed_at, created_at, custom_fields
             ) VALUES (
                 %(workspace_id)s, %(external_id)s, %(external_source)s,
                 %(number)s, %(status)s, %(currency)s,
                 %(subtotal)s, %(tax_amount)s, %(total_amount)s,
                 %(account_id)s, %(status_source)s, %(region_code)s, %(division_code)s,
-                %(confirmed_at)s::timestamptz, %(custom_fields)s::jsonb
+                %(confirmed_at)s::timestamptz,
+                COALESCE(%(created_at)s::timestamptz, NOW()),
+                %(custom_fields)s::jsonb
             )
             ON CONFLICT (workspace_id, external_source, external_id)
             WHERE external_source IS NOT NULL AND external_id IS NOT NULL
@@ -675,6 +896,7 @@ class SyncHandler:
             {
                 **row,
                 "account_id": account_id,
+                "created_at": created_at,
                 "custom_fields": json.dumps(row["custom_fields"]),
             },
         )
@@ -695,18 +917,23 @@ class SyncHandler:
                 region_code, division_code, canal_code, sector_code, mercado_code,
                 razon_social, nit, currency_id,
                 subtotal_amount, tax_amount, total_amount, products_quantity,
-                contacto_sol_id, estado_sync, custom_fields
+                contacto_sol_id, estado_sync,
+                lat, lng, description,
+                created_at, custom_fields
             ) VALUES (
                 %(workspace_id)s, %(external_id)s, %(external_source)s,
                 %(order_id)s, %(account_id)s,
                 %(nro_pedido)s, %(nro_sap)s, %(kunnr)s, %(kunnr_fact)s, %(kunnr_dest)s,
                 %(estado_original)s, %(status_source)s,
-                %(fecha_pedido)s::timestamptz, %(fecha_entrega)s::timestamptz, %(fecha_compromiso_pago)s::timestamptz,
+                %(fecha_pedido)s::timestamptz, %(fecha_entrega)s::timestamptz,
+                %(fecha_compromiso_pago)s::timestamptz,
                 %(payment_type)s, %(cod_tipo_pedido)s, %(tipo_doc)s,
                 %(region_code)s, %(division_code)s, %(canal_code)s, %(sector_code)s, %(mercado_code)s,
                 %(razon_social)s, %(nit)s, %(currency_id)s,
                 %(subtotal)s, %(tax_amount)s, %(total_amount)s, %(products_quantity)s,
-                %(contacto_sol_id)s, %(estado_sync)s, %(custom_fields)s::jsonb
+                %(contacto_sol_id)s, %(estado_sync)s,
+                %(lat)s, %(lng)s, %(description)s,
+                COALESCE(%(created_at)s::timestamptz, NOW()), %(custom_fields)s::jsonb
             )
             ON CONFLICT (workspace_id, external_source, external_id) DO UPDATE SET
                 order_id = COALESCE(EXCLUDED.order_id, suite_reco.pedidos.order_id),
@@ -738,6 +965,9 @@ class SyncHandler:
                 products_quantity = EXCLUDED.products_quantity,
                 contacto_sol_id = EXCLUDED.contacto_sol_id,
                 estado_sync = EXCLUDED.estado_sync,
+                lat = COALESCE(EXCLUDED.lat, suite_reco.pedidos.lat),
+                lng = COALESCE(EXCLUDED.lng, suite_reco.pedidos.lng),
+                description = COALESCE(EXCLUDED.description, suite_reco.pedidos.description),
                 custom_fields = suite_reco.pedidos.custom_fields || EXCLUDED.custom_fields,
                 updated_at = NOW()
             """,
@@ -774,6 +1004,10 @@ class SyncHandler:
                 "products_quantity": products_quantity,
                 "contacto_sol_id": contacto_sol_id,
                 "estado_sync": estado_sync,
+                "lat": lat,
+                "lng": lng,
+                "description": description,
+                "created_at": created_at,
                 "custom_fields": json.dumps(row["custom_fields"]),
             },
         )
@@ -1037,19 +1271,28 @@ class SyncHandler:
         Called by the consumer after each batch commit. Silent when no
         skips have occurred.
         """
-        if not self._skip_counts:
-            return
-        summary = ", ".join(
-            f"{table}:{reason}={n}"
-            for (table, reason), n in sorted(self._skip_counts.items())
-        )
-        logger.info("FK skip summary: %s", summary)
-        self._skip_counts.clear()
+        if self._skip_counts:
+            summary = ", ".join(
+                f"{table}:{reason}={n}"
+                for (table, reason), n in sorted(self._skip_counts.items())
+            )
+            logger.info("FK skip summary: %s", summary)
+            self._skip_counts.clear()
+
+        if self._link_counts:
+            linked = self._link_counts.get("linked", 0)
+            acct_miss = self._link_counts.get("account_not_found", 0)
+            cont_miss = self._link_counts.get("contact_not_found", 0)
+            logger.info(
+                "account-contact links: linked=%d account_not_found=%d contact_not_found=%d",
+                linked, acct_miss, cont_miss,
+            )
+            self._link_counts.clear()
 
     # ── Schema bootstrap ────────────────────────────────────────
 
     def ensure_lookup_table(self):
-        """Create the email lookup table if it doesn't exist."""
+        """Create lightweight lookup tables needed by CDC enrichment handlers."""
         cur = self.conn.cursor()
         cur.execute(
             """
@@ -1059,6 +1302,19 @@ class SyncHandler:
             )
             """
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS _sync_relacion_lookup (
+                workspace_id UUID NOT NULL,
+                external_id VARCHAR(36) NOT NULL,
+                zona_ventas VARCHAR(20),
+                id_regional VARCHAR(20),
+                relacion_principal JSONB DEFAULT '{}'::jsonb,
+                updated_at TIMESTAMPTZ DEFAULT NOW(),
+                PRIMARY KEY (workspace_id, external_id)
+            )
+            """
+        )
         self.conn.commit()
         cur.close()
-        logger.info("Email lookup table ready")
+        logger.info("Lookup tables ready")

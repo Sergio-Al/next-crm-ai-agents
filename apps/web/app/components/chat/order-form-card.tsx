@@ -27,12 +27,24 @@ interface LineItem {
   productName: string;
   unitPrice: number;
   quantity: number;
+  aiSuggested?: boolean;
+}
+
+interface SuggestedItem {
+  productId: string;
+  productName: string;
+  productSku?: string;
+  unitPrice: number;
+  quantity: number;
 }
 
 interface Props {
   args: {
     contactId?: string;
+    accountId?: string;
+    dealId?: string;
     items?: Array<{ productId: string; quantity: number }>;
+    suggestedItems?: SuggestedItem[];
     notes?: string;
   };
   toolCallId: string;
@@ -43,10 +55,93 @@ export function OrderFormCard({ args, toolCallId, addToolResult }: Props) {
   const t = useTranslations("orderForm");
   const tc = useTranslations("common");
 
-  const [contactId, setContactId] = useState(args.contactId ?? "");
+  const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+  const isValidId = (v?: string) =>
+    !!v && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) && v.toLowerCase() !== NIL_UUID;
+
+  // The LLM sometimes sends the same UUID for both contactId and accountId.
+  // Treat that as "no contact" so we don't 404 fetching a contact-by-account-id.
+  const validContactId =
+    isValidId(args.contactId) && args.contactId !== args.accountId
+      ? args.contactId
+      : undefined;
+  const validAccountId = isValidId(args.accountId) ? args.accountId : undefined;
+
+  const [contactId, setContactId] = useState(validContactId ?? "");
   const [notes, setNotes] = useState(args.notes ?? "");
   const [lineItems, setLineItems] = useState<LineItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
+
+  // Seed AI-suggested items immediately (no fetch needed, prices included)
+  const suggestedSeeded = useRef(false);
+  useEffect(() => {
+    if (suggestedSeeded.current) return;
+    if (args.suggestedItems && args.suggestedItems.length > 0) {
+      // Only accept items with a real UUID productId so fabricated placeholders are dropped
+      const validItems = args.suggestedItems.filter((s) => isUUID(s.productId));
+      if (validItems.length === 0) return;
+      suggestedSeeded.current = true;
+      setLineItems(validItems.map((s) => ({
+        productId: s.productId,
+        productName: s.productName,
+        unitPrice: s.unitPrice,
+        quantity: s.quantity,
+        aiSuggested: true,
+      })));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);  // run once on mount
+
+  // Auto-fetch product suggestions when an accountId is provided and no
+  // items were pre-supplied. Mirrors the suggestProducts tool but runs
+  // entirely client-side so the LLM never needs to recall product UUIDs.
+  const autoSuggestStarted = useRef(false);
+  useEffect(() => {
+    if (autoSuggestStarted.current) return;
+    if (suggestedSeeded.current) return;
+    if (!validAccountId && !validContactId) return;
+    if ((args.items?.length ?? 0) > 0) return;
+    if ((args.suggestedItems?.length ?? 0) > 0) return;
+    autoSuggestStarted.current = true;
+    setSuggesting(true);
+    fetch("/api/orders/suggest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        accountId: validAccountId,
+        contactId: validContactId,
+        limit: 5,
+        explain: false,
+      }),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const suggestions: Array<{
+          productId: string;
+          productName: string;
+          price: number | string | null;
+        }> | undefined = data?.suggestions;
+        if (!suggestions || suggestions.length === 0) return;
+        const items = suggestions
+          .filter((s) => isUUID(s.productId))
+          .slice(0, 5)
+          .map((s) => ({
+            productId: s.productId,
+            productName: s.productName,
+            unitPrice:
+              typeof s.price === "string"
+                ? parseFloat(s.price) || 0
+                : (s.price ?? 0),
+            quantity: 1,
+            aiSuggested: true,
+          }));
+        if (items.length > 0) setLineItems(items);
+      })
+      .catch(() => {})
+      .finally(() => setSuggesting(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Contact search
   const [contactQuery, setContactQuery] = useState("");
@@ -65,7 +160,7 @@ export function OrderFormCard({ args, toolCallId, addToolResult }: Props) {
   const productDropdownRef = useRef<HTMLDivElement>(null);
   const productDebounce = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const isUUID = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+  const isUUID = (v: string) => isValidId(v);
 
   // Track whether pre-filled data has already been resolved to avoid re-fetching
   const contactResolved = useRef(false);
@@ -74,9 +169,9 @@ export function OrderFormCard({ args, toolCallId, addToolResult }: Props) {
   // Resolve pre-filled contactId (only once when a valid UUID arrives)
   useEffect(() => {
     if (contactResolved.current) return;
-    if (args.contactId && isUUID(args.contactId)) {
+    if (validContactId) {
       contactResolved.current = true;
-      fetch(`/api/contacts/${encodeURIComponent(args.contactId)}`)
+      fetch(`/api/contacts/${encodeURIComponent(validContactId)}`)
         .then((r) => r.json())
         .then((data) => {
           if (data.data) {
@@ -88,7 +183,7 @@ export function OrderFormCard({ args, toolCallId, addToolResult }: Props) {
         })
         .catch(() => { contactResolved.current = false; });
     }
-  }, [args.contactId]);
+  }, [validContactId]);
 
   // Resolve pre-filled items — wait until ALL items have valid UUIDs (streaming done)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -123,13 +218,15 @@ export function OrderFormCard({ args, toolCallId, addToolResult }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemsKey]);
 
-  // Load initial contacts
+  // Load initial contacts (scoped to account if accountId is provided)
   useEffect(() => {
-    fetch("/api/contacts?limit=5")
+    const accountParam = validAccountId ? `&accountId=${encodeURIComponent(validAccountId)}` : "";
+    fetch(`/api/contacts?limit=20${accountParam}`)
       .then((r) => r.json())
       .then((data) => { if (data.data) setContactResults(data.data); })
       .catch(() => {});
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);  // run once
 
   // Load initial products
   useEffect(() => {
@@ -178,7 +275,8 @@ export function OrderFormCard({ args, toolCallId, addToolResult }: Props) {
     if (value.trim()) {
       searchContacts(value);
     } else {
-      fetch("/api/contacts?limit=5")
+      const accountParam = args.accountId ? `&accountId=${encodeURIComponent(args.accountId)}` : "";
+      fetch(`/api/contacts?limit=20${accountParam}`)
         .then((r) => r.json())
         .then((data) => { if (data.data) setContactResults(data.data); })
         .catch(() => {});
@@ -263,6 +361,8 @@ export function OrderFormCard({ args, toolCallId, addToolResult }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contactId: contactId || undefined,
+          accountId: validAccountId,
+          dealId: isValidId(args.dealId) ? args.dealId : undefined,
           notes: notes || undefined,
           items: lineItems.map((li) => ({
             productId: li.productId,
@@ -343,11 +443,24 @@ export function OrderFormCard({ args, toolCallId, addToolResult }: Props) {
       {/* Line items */}
       <div>
         <label className="text-xs text-muted-foreground">{t("fieldItems")}</label>
+        {suggesting && lineItems.length === 0 && (
+          <div className="flex items-center gap-2 mt-1.5 mb-2 px-2.5 py-1.5 rounded-md border bg-muted/30 text-xs text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" />
+            {t("loadingSuggestions")}
+          </div>
+        )}
         {lineItems.length > 0 && (
           <div className="space-y-1.5 mt-1.5 mb-2">
             {lineItems.map((li) => (
               <div key={li.productId} className="flex items-center gap-2 rounded-md border bg-muted/30 px-2.5 py-1.5 text-sm">
-                <span className="flex-1 truncate font-medium">{li.productName}</span>
+                <div className="flex flex-1 min-w-0 items-center gap-1.5">
+                  <span className="truncate font-medium">{li.productName}</span>
+                  {li.aiSuggested && (
+                    <span className="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[9px] font-medium text-primary">
+                      {t("aiSuggested")}
+                    </span>
+                  )}
+                </div>
                 <span className="text-xs text-muted-foreground">
                   ${li.unitPrice.toFixed(2)}
                 </span>

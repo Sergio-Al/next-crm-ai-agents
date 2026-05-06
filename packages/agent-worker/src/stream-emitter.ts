@@ -1,8 +1,7 @@
-import { Redis } from "ioredis";
+import { createRedisConnection } from "./redis.js";
 import type { SseEvent } from "@crm-agent/shared/types/events";
 
-const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
-const redis = new Redis(REDIS_URL);
+const redis = createRedisConnection();
 
 /**
  * Publish an SSE event to Redis Streams for gateway fan-out.

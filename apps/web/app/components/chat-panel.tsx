@@ -3,6 +3,7 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import {
   MessageSquareDashed,
   Send,
@@ -22,6 +23,12 @@ import {
 import { useTranslations, useLocale } from "next-intl";
 import { ChatMessage } from "./chat-message";
 import type { UIMessage } from "ai";
+import {
+  buildChatDrawerHref,
+  getDrawerTargetFromUrl,
+  getEntityPageHref,
+  isChatPath,
+} from "@/lib/chat-entity-navigation";
 
 export interface ChatContext {
   type: "deal" | "contact" | "order" | "account";
@@ -90,6 +97,8 @@ export function ChatPanel({
   compact,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
+  const router = useRouter();
   const [activeConvId, setActiveConvId] = useState<string | null>(
     conversationId ?? null,
   );
@@ -188,10 +197,34 @@ export function ChatPanel({
       if (event.type === "continue_conversation") {
         sendMessage({ text: event.humanFriendlyMessage });
       } else if (event.type === "open_url" && event.params.url) {
+        const url = new URL(String(event.params.url), window.location.href);
+        const drawerTarget = getDrawerTargetFromUrl(url);
+
+        if (drawerTarget && isChatPath(pathname) && url.origin === window.location.origin) {
+          if (window.matchMedia("(max-width: 767px)").matches) {
+            router.push(getEntityPageHref(pathname, drawerTarget.type, drawerTarget.id));
+            return;
+          }
+
+          const href = buildChatDrawerHref({
+            pathname,
+            conversationId: activeConvIdRef.current,
+            drawerType: drawerTarget.type,
+            drawerId: drawerTarget.id,
+          });
+          router.push(href);
+          return;
+        }
+
+        if (url.origin === window.location.origin) {
+          router.push(`${url.pathname}${url.search}${url.hash}`);
+          return;
+        }
+
         window.open(event.params.url, "_blank", "noopener");
       }
     },
-    [sendMessage],
+    [pathname, router, sendMessage],
   );
 
   const activeSuggestions = context

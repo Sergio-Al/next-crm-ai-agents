@@ -10,12 +10,14 @@ import {
   Zap,
   Package,
   ShoppingCart,
+  Wrench,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 import { LanguageSwitcher } from "./language-switcher";
 import { ThemeToggle } from "./theme-toggle";
+// import { NotificationBell } from "./notification-bell"; // temporarily hidden
 
 const navItems = [
   { key: "dashboard" as const, href: "/dashboard" as const, icon: LayoutDashboard },
@@ -27,6 +29,7 @@ const navItems = [
   { key: "pipeline" as const, href: "/pipeline" as const, icon: GitCommitVertical },
   { key: "chat" as const, href: "/chat" as const, icon: MessageSquare },
   { key: "sessions" as const, href: "/sessions" as const, icon: Zap },
+  { key: "tools" as const, href: "/admin/tools" as const, icon: Wrench },
 ];
 
 export function AppSidebar() {
@@ -98,6 +101,7 @@ export function AppSidebar() {
           <span className="text-sm text-muted-foreground">v0.1.0</span>
         </div>
         <div className="flex items-center gap-1.5">
+          {/* <NotificationBell /> */}
           <ThemeToggle />
           <LanguageSwitcher />
         </div>

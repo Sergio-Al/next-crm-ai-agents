@@ -25,11 +25,20 @@ def create_consumer(conf: dict, topic_pattern: str) -> Consumer:
     return consumer
 
 
-def poll_messages(consumer: Consumer, handler, batch_size: int = 100, timeout: float = 1.0):
+def poll_messages(
+    consumer: Consumer,
+    handler,
+    batch_size: int = 100,
+    timeout: float = 1.0,
+    should_continue=None,
+):
     """Poll messages in a loop, dispatching to handler.
 
     Groups messages by entity for ordered batch processing during snapshot.
     Commits after each batch.
+
+    ``should_continue`` is an optional zero-arg callable returning ``False``
+    when the loop should exit (used for graceful shutdown on SIGINT/SIGTERM).
     """
     batch: list[tuple[str, str, dict]] = []  # (topic, entity, payload)
 
@@ -43,43 +52,58 @@ def poll_messages(consumer: Consumer, handler, batch_size: int = 100, timeout: f
             except Exception:
                 logger.exception("flush_stats failed")
 
-    while True:
-        msg = consumer.poll(timeout)
-        if msg is None:
-            # Flush any pending batch on idle
-            if batch:
+    def _keep_running() -> bool:
+        return True if should_continue is None else bool(should_continue())
+
+    try:
+        while _keep_running():
+            msg = consumer.poll(timeout)
+            if msg is None:
+                # Flush any pending batch on idle
+                if batch:
+                    _process_batch(batch, handler)
+                    _commit_and_flush()
+                    batch.clear()
+                continue
+
+            if msg.error():
+                err = msg.error()
+                # UNKNOWN_TOPIC_OR_PART is normal for regex subscriptions when no
+                # matching topics exist yet (e.g. connector not yet registered).
+                # Log and continue rather than crashing.
+                if err.code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
+                    logger.debug("No matching topics yet, waiting... (%s)", err)
+                    continue
+                raise KafkaException(err)
+
+            topic = msg.topic()
+            entity = extract_entity(topic)
+            if entity is None:
+                logger.warning("Skipping message from unknown topic: %s", topic)
+                continue
+
+            try:
+                payload = json.loads(msg.value().decode("utf-8"))
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                logger.error("Failed to decode message from %s: %s", topic, e)
+                continue
+
+            batch.append((topic, entity, payload))
+
+            if len(batch) >= batch_size:
                 _process_batch(batch, handler)
                 _commit_and_flush()
                 batch.clear()
-            continue
-
-        if msg.error():
-            err = msg.error()
-            # UNKNOWN_TOPIC_OR_PART is normal for regex subscriptions when no
-            # matching topics exist yet (e.g. connector not yet registered).
-            # Log and continue rather than crashing.
-            if err.code() == KafkaError.UNKNOWN_TOPIC_OR_PART:
-                logger.debug("No matching topics yet, waiting... (%s)", err)
-                continue
-            raise KafkaException(err)
-
-        topic = msg.topic()
-        entity = extract_entity(topic)
-        if entity is None:
-            logger.warning("Skipping message from unknown topic: %s", topic)
-            continue
-
-        try:
-            payload = json.loads(msg.value().decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            logger.error("Failed to decode message from %s: %s", topic, e)
-            continue
-
-        batch.append((topic, entity, payload))
-
-        if len(batch) >= batch_size:
-            _process_batch(batch, handler)
-            _commit_and_flush()
+    except KeyboardInterrupt:
+        logger.info("KeyboardInterrupt received in poll loop, exiting...")
+    finally:
+        # Best-effort flush of any pending messages before returning.
+        if batch:
+            try:
+                _process_batch(batch, handler)
+                _commit_and_flush()
+            except Exception:
+                logger.exception("Final batch flush failed during shutdown")
             batch.clear()
 
 
@@ -99,12 +123,14 @@ ENTITY_TIERS: dict[str, int] = {
     "contact": 0,
     "product": 0,
     "modelo": 0,
+    "relacion": 0,
     # tier 1
     "account-cstm": 1,
     "product-cstm": 1,
     "account-contact": 1,
     "email-address": 1,
     "email-rel": 1,
+    "relacion-account": 1,
     # tier 2
     "pedido": 2,
     "invoice": 2,

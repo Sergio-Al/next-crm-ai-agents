@@ -7,18 +7,26 @@ export async function GET(req: NextRequest) {
   const db = getDb();
   const url = new URL(req.url);
   const search = url.searchParams.get("search") ?? "";
+  const accountId = url.searchParams.get("accountId") ?? "";
   const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10));
   const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") ?? "20", 10)));
   const offset = (page - 1) * limit;
 
-  const where = search
-    ? sql`(
-        ${schema.contacts.firstName} ilike ${"%" + search + "%"} or
-        ${schema.contacts.lastName} ilike ${"%" + search + "%"} or
-        (${schema.contacts.firstName} || ' ' || ${schema.contacts.lastName}) ilike ${"%" + search + "%"} or
-        ${schema.contacts.email} ilike ${"%" + search + "%"} or
-        ${schema.contacts.companyName} ilike ${"%" + search + "%"}
-      )`
+  const conditions: ReturnType<typeof sql>[] = [];
+  if (search) {
+    conditions.push(sql`(
+      ${schema.contacts.firstName} ilike ${"%" + search + "%"} or
+      ${schema.contacts.lastName} ilike ${"%" + search + "%"} or
+      (${schema.contacts.firstName} || ' ' || ${schema.contacts.lastName}) ilike ${"%" + search + "%"} or
+      ${schema.contacts.email} ilike ${"%" + search + "%"} or
+      ${schema.contacts.companyName} ilike ${"%" + search + "%"}
+    )`);
+  }
+  if (accountId) {
+    conditions.push(sql`${schema.contacts.accountId} = ${accountId}`);
+  }
+  const where = conditions.length > 0
+    ? sql.join(conditions, sql` and `)
     : sql`true`;
 
   const [{ count }] = await db

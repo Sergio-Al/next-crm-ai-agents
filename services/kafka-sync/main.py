@@ -115,6 +115,7 @@ def main():
             consumer,
             handler=handler.handle,
             batch_size=BATCH_SIZE,
+            should_continue=lambda: _running,
         )
     except KeyboardInterrupt:
         logger.info("Interrupted by user")

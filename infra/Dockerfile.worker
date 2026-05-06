@@ -24,8 +24,14 @@ RUN cd packages/agent-worker && npx tsc --outDir dist
 FROM node:20-alpine AS runner
 ENV NODE_ENV=production
 WORKDIR /app
-COPY --from=builder /app/packages/agent-worker/dist ./dist
-COPY --from=builder /app/packages/agent-worker/node_modules ./node_modules
-COPY --from=builder /app/packages/shared/dist ./node_modules/@crm-agent/shared/dist
+# Skills (SKILL.md + tools.ts) are loaded dynamically at runtime, so we ship
+# the source folder and run via tsx instead of pre-compiled dist.
+COPY --from=builder /app/packages/agent-worker/src ./packages/agent-worker/src
+COPY --from=builder /app/packages/agent-worker/tsconfig.json ./packages/agent-worker/tsconfig.json
+COPY --from=builder /app/packages/agent-worker/node_modules ./packages/agent-worker/node_modules
+COPY --from=builder /app/packages/shared ./packages/shared
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
+COPY skills ./skills
+WORKDIR /app/packages/agent-worker
 EXPOSE 0
-CMD ["node", "dist/worker.js"]
+CMD ["npx", "tsx", "src/worker.ts"]

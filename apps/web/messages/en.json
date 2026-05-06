@@ -25,7 +25,62 @@
     "orders": "Orders",
     "pipeline": "Pipeline",
     "chat": "Chat",
-    "sessions": "Sessions"
+    "sessions": "Sessions",
+    "tools": "Tools"
+  },
+  "adminTools": {
+    "title": "Tools Registry",
+    "subtitle": "Manage chat tools, integrations, and system-prompt steering. Toggle tools, edit descriptions, or wire new HTTP data sources.",
+    "count": "{count, plural, =0 {No tools} one {# tool} other {# tools}}",
+    "newTool": "New HTTP tool",
+    "colName": "Name",
+    "colKind": "Kind",
+    "colHitl": "HITL",
+    "colEnabled": "Enabled",
+    "colCalls": "Recent calls",
+    "colUpdated": "Updated",
+    "kindStatic": "Static",
+    "kindHttp": "HTTP",
+    "kindQuery": "Query",
+    "hitlYes": "Yes",
+    "hitlNo": "No",
+    "noTools": "No tools yet. Click 'New HTTP tool' to wire an external API.",
+    "searchPlaceholder": "Search by name or description",
+    "analyticsTitle": "Tool usage",
+    "analyticsSubtitle": "Last 7 days, from tool_calls.",
+    "analyticsCalls": "Calls",
+    "analyticsErrors": "Errors",
+    "analyticsP95": "p95 (ms)",
+    "analyticsTool": "Tool",
+    "form": {
+      "title": "New HTTP tool",
+      "editTitle": "Edit tool",
+      "name": "Name",
+      "namePlaceholder": "getSapInvoice",
+      "description": "Description",
+      "descriptionPlaceholder": "What this tool does — shown to the LLM as the tool description.",
+      "systemPromptHint": "System-prompt hint",
+      "systemPromptHintPlaceholder": "Use getSapInvoice when the user asks about SAP invoice details.",
+      "enabled": "Enabled",
+      "hitl": "Human-in-the-loop (preview)",
+      "url": "URL",
+      "urlPlaceholder": "https://api.example.com/invoices/{{invoiceId}}",
+      "method": "Method",
+      "headers": "Headers (JSON)",
+      "bodyTemplate": "Body template",
+      "inputSchema": "Input parameters",
+      "addParam": "Add parameter",
+      "paramName": "Name",
+      "paramType": "Type",
+      "paramOptional": "Optional",
+      "paramDescription": "Description",
+      "save": "Save tool",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "deleteConfirm": "Delete this tool? It will stop appearing in chat immediately.",
+      "saveError": "Save failed",
+      "saving": "Saving..."
+    }
   },
   "chat": {
     "heading": "What can I help you with?",
@@ -87,6 +142,34 @@
     "createButton": "Create Contact",
     "creating": "Creating..."
   },
+  "activityForm": {
+    "title": "Log Activity",
+    "type": "Type",
+    "type_call": "Call",
+    "type_email": "Email",
+    "type_meeting": "Meeting",
+    "type_note": "Note",
+    "type_task": "Task",
+    "subject": "Subject",
+    "body": "Notes",
+    "contact": "Contact",
+    "deal": "Deal",
+    "scheduledAt": "Scheduled At",
+    "durationMin": "Duration (minutes)",
+    "confirmButton": "Log Activity",
+    "cancelButton": "Cancel",
+    "saving": "Saving...",
+    "success": "Activity logged"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "aria": "Notifications",
+    "markAllRead": "Mark all as read",
+    "markRead": "Mark as read",
+    "empty": "No notifications yet",
+    "loading": "Loading...",
+    "view": "View"
+  },
   "stageUpdate": {
     "title": "Move Deal Stage",
     "dealLabel": "Deal:",
@@ -104,6 +187,16 @@
     "status_delivered": "Delivered",
     "status_cancelled": "Cancelled"
   },
+  "rescheduleDeliveries": {
+    "title": "Reschedule Deliveries",
+    "fromLabel": "From:",
+    "toLabel": "New date:",
+    "reasonLabel": "Reason:",
+    "affectedLabel": "{count} delivery scheduled for this date will be moved.",
+    "confirmButton": "Confirm Reschedule",
+    "rescheduling": "Rescheduling...",
+    "jobEnqueued": "Reschedule job enqueued ({count} orders)."
+  },
   "sessionPlan": {
     "title": "Create Agent Session",
     "goalLabel": "Goal",
@@ -119,6 +212,17 @@
     "stepAiReasoning": "AI Reasoning",
     "stepHumanCheckpoint": "Human Checkpoint"
   },
+  "sessionLiveFeed": {
+    "stepStarted": "Step {step}: {description}",
+    "stepCompleted": "Step {step} completed",
+    "stepFailed": "Step {step} failed: {error}",
+    "waitScheduled": "Waiting {duration}",
+    "humanCheckpoint": "Waiting for your approval",
+    "aiReasoning": "AI reasoning",
+    "crmActionResult": "CRM action: {action}",
+    "sessionCompleted": "Session completed",
+    "viewTimeline": "View full timeline →"
+  },
   "sessionStatus": {
     "notFound": "Session not found",
     "progress": "Progress: {current}/{total}",
@@ -127,7 +231,13 @@
   },
   "contactList": {
     "found": "{count} contact(s) found",
-    "notFound": "No contacts found."
+    "notFound": "No contacts found.",
+    "open": "Open"
+  },
+  "accountList": {
+    "found": "{count} account(s) found",
+    "notFound": "No accounts found.",
+    "open": "Open"
   },
   "contactDetail": {
     "deals": "Deals ({count})",
@@ -291,6 +401,10 @@
     "sheetTitleContact": "Contact",
     "sheetTitleOrder": "Order",
     "sheetTitleAccount": "Account",
+    "openFullPage": "Open full page",
+    "openContact": "Open contact",
+    "openAccount": "Open account",
+    "noSecondaryInfo": "No email or phone",
     "suggestAccountSummary": "Summarize account",
     "suggestAccountSummaryDesc": "Quick overview of revenue, orders, and contacts.",
     "suggestAccountSummaryPrompt": "Summarize this account: revenue, recent orders, and key contacts.",
@@ -540,6 +654,28 @@
     "fieldNotes": "Notes",
     "notesPlaceholder": "Optional notes...",
     "createButton": "Create Order",
-    "creating": "Creating..."
+    "creating": "Creating...",
+    "aiSuggested": "AI",
+    "loadingSuggestions": "Loading AI suggestions..."
+  },
+  "accountDetail": {
+    "statOrders": "Orders",
+    "statRevenue": "Revenue",
+    "statLastOrder": "Last Order",
+    "sectionContacts": "Contacts ({count})",
+    "moreContacts": "+{count} more",
+    "sectionRecentOrders": "Recent Orders",
+    "sectionDeals": "Deals ({count})",
+    "noOrders": "No orders"
+  },
+  "orderAnomalies": {
+    "found": "{count} anomaly(s) found",
+    "noAnomalies": "No order anomalies detected.",
+    "type_overdue_delivery": "Overdue Delivery",
+    "type_stuck_confirmed": "Stuck Confirmed",
+    "type_sap_error": "SAP Sync Error",
+    "severity_warning": "Warning",
+    "severity_critical": "Critical",
+    "daysSince": "{count}d ago"
   }
 }

@@ -1,21 +1,20 @@
 import { Worker, Queue } from "bullmq";
-import { Redis } from "ioredis";
+import { createRedisConnection } from "./redis.js";
 import { createOpenAI } from "@ai-sdk/openai";
 import { embed } from "ai";
 import { eq } from "drizzle-orm";
 import * as schema from "@crm-agent/shared/db/schema";
 import { createDb } from "@crm-agent/shared/db";
 
-const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 const DATABASE_URL =
   process.env.DATABASE_URL ??
   process.env.POSTGRES_URL ??
   "postgresql://platform:platform@localhost:6432/platform";
 
 const EMBEDDING_PENDING_LIST = "product-embeddings:pending";
+const ACCOUNT_EMBEDDING_PENDING_LIST = "account-embeddings:pending";
 
-const connection = new Redis(REDIS_URL, { maxRetriesPerRequest: null });
-
+const connection = createRedisConnection();
 let _db: ReturnType<typeof createDb> | null = null;
 function getDb() {
   if (!_db) _db = createDb(DATABASE_URL);
@@ -35,7 +34,7 @@ function getEmbeddingModel() {
  */
 async function startPendingRelay() {
   // Separate blocking connection so BLPOP doesn't starve other commands
-  const blockingConn = new Redis(REDIS_URL, { maxRetriesPerRequest: null });
+  const blockingConn = createRedisConnection();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const queue = new Queue("product-embeddings", { connection: connection as any });
 
@@ -66,6 +65,46 @@ async function startPendingRelay() {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[EmbeddingRelay] error: ${msg}`);
         // Avoid tight loop on persistent errors
+        await new Promise((r) => setTimeout(r, 1_000));
+      }
+    }
+  })();
+}
+
+/**
+ * Account-embeddings relay — mirrors the product flow but for crm_accounts.
+ */
+async function startAccountPendingRelay() {
+  const blockingConn = createRedisConnection();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const queue = new Queue("account-embeddings", { connection: connection as any });
+
+  console.log(`[AccountEmbeddingRelay] Watching Redis list: ${ACCOUNT_EMBEDDING_PENDING_LIST}`);
+
+  (async () => {
+    while (true) {
+      try {
+        const popped = await blockingConn.blpop(ACCOUNT_EMBEDDING_PENDING_LIST, 0);
+        if (!popped) continue;
+        const [, raw] = popped;
+        const { accountId, text } = JSON.parse(raw) as {
+          accountId: string;
+          text: string;
+        };
+        await queue.add(
+          `embed-account-${accountId}`,
+          { accountId, text },
+          {
+            attempts: 3,
+            backoff: { type: "exponential", delay: 5_000 },
+            jobId: `embed-account-${accountId}`,
+            removeOnComplete: 100,
+            removeOnFail: 50,
+          },
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[AccountEmbeddingRelay] error: ${msg}`);
         await new Promise((r) => setTimeout(r, 1_000));
       }
     }
@@ -107,11 +146,60 @@ export function startEmbeddingWorker() {
     console.error(`[EmbeddingWorker] Job ${job?.id} failed:`, err.message);
   });
 
+  worker.on("error", (err) => {
+    console.error("[EmbeddingWorker] connection error:", err.message);
+  });
+
   console.log("[EmbeddingWorker] Product embedding worker started");
 
-  // Start the relay loop for CDC-originated embedding requests
+  const accountWorker = new Worker(
+    "account-embeddings",
+    async (job) => {
+      const { accountId, text } = job.data as { accountId: string; text: string };
+
+      if (!text?.trim()) {
+        console.log(`[AccountEmbeddingWorker] Skipping ${accountId} — empty text`);
+        return;
+      }
+
+      const { embedding } = await embed({
+        model: getEmbeddingModel(),
+        value: text,
+      });
+
+      const db = getDb();
+      await db
+        .update(schema.crmAccounts)
+        .set({ embedding })
+        .where(eq(schema.crmAccounts.id, accountId));
+
+      console.log(
+        `[AccountEmbeddingWorker] Embedded account ${accountId} (${embedding.length}d)`,
+      );
+    },
+    {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      connection: connection as any,
+      concurrency: 3,
+    },
+  );
+
+  accountWorker.on("failed", (job, err) => {
+    console.error(`[AccountEmbeddingWorker] Job ${job?.id} failed:`, err.message);
+  });
+
+  accountWorker.on("error", (err) => {
+    console.error("[AccountEmbeddingWorker] connection error:", err.message);
+  });
+
+  console.log("[AccountEmbeddingWorker] Account embedding worker started");
+
+  // Start the relay loops for CDC-originated embedding requests
   startPendingRelay().catch((err) => {
     console.error("[EmbeddingRelay] Failed to start:", err);
+  });
+  startAccountPendingRelay().catch((err) => {
+    console.error("[AccountEmbeddingRelay] Failed to start:", err);
   });
 
   return worker;

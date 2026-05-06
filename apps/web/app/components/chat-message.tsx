@@ -1,7 +1,7 @@
 import type { UIMessage } from "ai";
-import { isToolUIPart } from "ai";
+import { isToolUIPart, getToolName } from "ai";
 import { Component, type ReactNode } from "react";
-import { Bot, User } from "lucide-react";
+import { Bot, User, Wrench } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Renderer } from "@openuidev/react-lang";
@@ -56,6 +56,15 @@ function looksLikeRawJSON(text: string): boolean {
   return /^\{\s*"[^"]+"\s*:/.test(trimmed) || /^\[\s*\{/.test(trimmed);
 }
 
+/** Convert camelCase or snake_case tool name to a human-readable label. */
+function humanizeToolName(name: string): string {
+  return name
+    .replace(/_/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/^./, (s) => s.toUpperCase())
+    .trim();
+}
+
 interface ChatMessageProps {
   message: UIMessage;
   isStreaming?: boolean;
@@ -68,8 +77,25 @@ export function ChatMessage({ message, isStreaming, compact, addToolResult, onAc
   const isUser = message.role === "user";
   const t = useTranslations("toolRenderer");
 
+  // Collect unique tool names that completed (for the trace footer)
+  const toolsUsed = !isUser
+    ? Array.from(
+        new Set(
+          (message.parts ?? [])
+            .filter((p) => isToolUIPart(p) && (p as any).state === "output-available")
+            .map((p) => humanizeToolName(getToolName(p as any))),
+        ),
+      )
+    : [];
+
+  // Token usage embedded by the server in message.metadata
+  const usage = !isUser
+    ? (message.metadata as { inputTokens?: number; outputTokens?: number } | undefined)
+    : undefined;
+
   return (
-    <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
+    <div className={`flex flex-col gap-1 ${isUser ? "items-end" : "items-start"}`}>
+      <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : ""} w-full`}>
       <Avatar className={`${compact ? "size-6" : "size-8"} shrink-0`}>
         <AvatarFallback
           className={isUser ? "bg-primary text-primary-foreground" : "bg-muted"}
@@ -147,6 +173,27 @@ export function ChatMessage({ message, isStreaming, compact, addToolResult, onAc
           return null;
         })}
       </div>
+    </div>
+
+      {/* Tool trace + token usage footer — assistant messages only */}
+      {!isUser && !isStreaming && (toolsUsed.length > 0 || usage?.outputTokens) && (
+        <div className={`flex items-center gap-2 flex-wrap text-[10px] text-muted-foreground/50 ${compact ? "pl-9" : "pl-11"}`}>
+          {toolsUsed.length > 0 && (
+            <>
+              <Wrench className="size-3 shrink-0" />
+              <span>{toolsUsed.join(" · ")}</span>
+            </>
+          )}
+          {usage?.outputTokens != null && (
+            <>
+              {toolsUsed.length > 0 && <span className="opacity-40">·</span>}
+              <span>
+                {usage.inputTokens?.toLocaleString() ?? "?"} in · {usage.outputTokens.toLocaleString()} out
+              </span>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

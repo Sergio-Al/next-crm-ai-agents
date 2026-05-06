@@ -89,8 +89,7 @@ def transform_account(payload: dict, workspace_id: str) -> dict | None:
         return {"__deleted": True, "external_id": payload["id"]}
 
     custom_fields = {}
-    if payload.get("account_type"):
-        custom_fields["account_type"] = payload["account_type"]
+    source_account_type = payload.get("account_type") or None
     if payload.get("phone_office"):
         custom_fields["phone"] = payload["phone_office"]
     if payload.get("sic_code"):
@@ -135,6 +134,7 @@ def transform_account(payload: dict, workspace_id: str) -> dict | None:
         "industry": payload.get("industry"),
         "website": payload.get("website"),
         "size": size,
+        "source_account_type": source_account_type,
         "custom_fields": custom_fields or {},
     }
 
@@ -427,8 +427,34 @@ def transform_visit(payload: dict, workspace_id: str) -> dict | None:
 # Columns from accounts_cstm promoted to first-class crm_accounts columns.
 # `idcuentasap_c` becomes sap_account_id and is also pushed into
 # suite_reco.kunnr_lookup so pedidos can resolve their account.
-_ACCOUNT_CSTM_PROMOTED = {"idcuentasap_c"}
+_ACCOUNT_CSTM_PROMOTED = {
+    "idcuentasap_c",
+    "nombre_comercial_c",
+    "nit_ci_c",
+    "categoria_ventas_c",
+    "condicion_pago_c",
+    "tipocuenta_c",
+    "limite_credito_c",
+    "bloqueo_entrega_c",
+    "bloqueo_factura_c",
+    "jjwg_maps_lat_c",
+    "jjwg_maps_lng_c",
+}
+_ACCOUNT_CSTM_RELACION_FIELDS = {
+    "canal_list_c",
+    "regimen_tributario_c",
+    "tipo_documento_c",
+    "tratamientosap_c",
+    "bloqueo_documentos_c",
+    "estado_verificacion_cuenta_c",
+}
 _ACCOUNT_CSTM_EXCLUDED = {"id_c", "__deleted"}
+_RELACION_LOOKUP_FIELDS = {
+    "iddivision_c",
+    "idamercado_c",
+    "idcanalvta_c",
+    "idgrupocliente_c",
+}
 
 
 def transform_account_cstm(payload: dict, workspace_id: str) -> dict | None:
@@ -438,11 +464,18 @@ def transform_account_cstm(payload: dict, workspace_id: str) -> dict | None:
     if _is_deleted(payload):
         return None
 
+    relacion_principal = {
+        k: v
+        for k, v in payload.items()
+        if k in _ACCOUNT_CSTM_RELACION_FIELDS and v is not None and str(v) != ""
+    }
+
     custom_fields = {
         k: v
         for k, v in payload.items()
         if k.endswith("_c")
         and k not in _ACCOUNT_CSTM_PROMOTED
+        and k not in _ACCOUNT_CSTM_RELACION_FIELDS
         and k not in _ACCOUNT_CSTM_EXCLUDED
         and v is not None
         and str(v) != ""
@@ -455,7 +488,90 @@ def transform_account_cstm(payload: dict, workspace_id: str) -> dict | None:
         "external_source": "suitecrm",
         "workspace_id": workspace_id,
         "sap_account_id": sap_account_id,
+        "nombre_comercial": _first_non_empty(payload.get("nombre_comercial_c")),
+        "nit_ci": _first_non_empty(payload.get("nit_ci_c")),
+        "categoria_ventas": _first_non_empty(payload.get("categoria_ventas_c")),
+        "condicion_pago": _first_non_empty(payload.get("condicion_pago_c")),
+        "tipo_cuenta": _first_non_empty(payload.get("tipocuenta_c")),
+        "limite_credito": _to_float(payload.get("limite_credito_c")),
+        "bloqueo_entrega": _to_bool(payload.get("bloqueo_entrega_c")) or False,
+        "bloqueo_factura": _to_bool(payload.get("bloqueo_factura_c")) or False,
+        "lat": _to_float(payload.get("jjwg_maps_lat_c")),
+        "lng": _to_float(payload.get("jjwg_maps_lng_c")),
+        "relacion_principal": relacion_principal,
         "custom_fields": custom_fields,
+    }
+
+
+def transform_relacion(payload: dict, workspace_id: str) -> dict | None:
+    external_id = payload.get("id")
+    if not external_id:
+        return None
+    if _is_deleted(payload):
+        return None
+
+    relacion_principal = {
+        key: value
+        for key in _RELACION_LOOKUP_FIELDS
+        if (value := _first_non_empty(payload.get(key))) is not None
+    }
+
+    tipo_relacion = _first_non_empty(
+        payload.get("tipo_relacion"),
+        payload.get("tipo_relacion_c"),
+    )
+    if tipo_relacion is not None:
+        relacion_principal["tipo_relacion"] = tipo_relacion
+
+    principal = _to_bool(payload.get("principal"))
+    if principal is None:
+        principal = _to_bool(payload.get("principal_c"))
+    if principal is not None:
+        relacion_principal["principal"] = principal
+
+    return {
+        "external_id": external_id,
+        "external_source": "suitecrm",
+        "workspace_id": workspace_id,
+        "zona_ventas": _first_non_empty(
+            payload.get("zona_ventas_c"),
+            payload.get("zona_ventas"),
+        ),
+        "id_regional": _first_non_empty(
+            payload.get("idregional_c"),
+            payload.get("id_regional"),
+            payload.get("idregional"),
+        ),
+        "relacion_principal": relacion_principal,
+    }
+
+
+def transform_relacion_account(payload: dict, workspace_id: str) -> dict | None:
+    external_id = payload.get("id")
+    if not external_id or _is_deleted(payload):
+        return None
+
+    relacion_external_id = _first_non_empty(
+        payload.get("hana_relaciones_accountshana_relaciones_ida"),
+        payload.get("hana_relaciones_accountshana_relaciones_idb"),
+        payload.get("hana_relaciones_id"),
+        payload.get("relacion_id"),
+    )
+    account_external_id = _first_non_empty(
+        payload.get("hana_relaciones_accountsaccounts_idb"),
+        payload.get("hana_relaciones_accountsaccounts_ida"),
+        payload.get("accounts_id"),
+        payload.get("account_id"),
+    )
+    if not relacion_external_id or not account_external_id:
+        return None
+
+    return {
+        "external_id": external_id,
+        "external_source": "suitecrm",
+        "workspace_id": workspace_id,
+        "relacion_external_id": relacion_external_id,
+        "account_external_id": account_external_id,
     }
 
 
@@ -495,6 +611,7 @@ def transform_pedido(payload: dict, workspace_id: str) -> dict | None:
     fecha_pedido = _epoch_ms_to_dt(payload.get("fecha_c"))
     fecha_entrega = _epoch_ms_to_dt(payload.get("fecha_entrega_c"))
     fecha_compromiso_pago = _epoch_ms_to_dt(payload.get("fecha_compromiso_pago_c"))
+    date_entered = _epoch_ms_to_dt(payload.get("date_entered"))
 
     # `name` is usually like "PED-000123"; nro_pedido_c is the human number.
     order_number = _first_non_empty(
@@ -556,6 +673,10 @@ def transform_pedido(payload: dict, workspace_id: str) -> dict | None:
         "_products_quantity": _to_int(payload.get("products_quantity")) or _to_int(payload.get("nro_posiciones_c")),
         "_contacto_sol_id": payload.get("contacto_sol_id_c"),
         "_estado_sync": payload.get("estado_sync_c"),
+        "_lat": _to_float(payload.get("jjwg_maps_lat_c")),
+        "_lng": _to_float(payload.get("jjwg_maps_lng_c")),
+        "_description": payload.get("description") or None,
+        "_created_at": date_entered.isoformat() if date_entered else None,
     }
 
 
@@ -694,6 +815,8 @@ TRANSFORMERS = {
     "email-rel": transform_email_rel,
     "account-contact": transform_account_contact,
     "visit": transform_visit,
+    "relacion": transform_relacion,
+    "relacion-account": transform_relacion_account,
     "pedido": transform_pedido,
     "task": transform_task,
     "modelo": transform_modelo,

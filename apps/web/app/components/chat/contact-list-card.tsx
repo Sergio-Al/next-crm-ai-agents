@@ -3,7 +3,8 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useTranslations } from "next-intl";
-import { User, Mail, Building2, Phone } from "lucide-react";
+import { Mail, Building2, ArrowUpRight } from "lucide-react";
+import { ChatEntityLink } from "./chat-entity-link";
 
 interface Contact {
   id: string;
@@ -43,8 +44,22 @@ export function ContactListCard({ contacts }: { contacts: Contact[] }) {
             </AvatarFallback>
           </Avatar>
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-sm truncate">
-              {c.firstName} {c.lastName}
+            <div className="flex items-center justify-between gap-2">
+              <ChatEntityLink
+                type="contact"
+                entityId={c.id}
+                className="font-medium text-sm truncate hover:text-primary transition-colors"
+              >
+                {c.firstName} {c.lastName}
+              </ChatEntityLink>
+              <ChatEntityLink
+                type="contact"
+                entityId={c.id}
+                className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline shrink-0"
+              >
+                {t("open")}
+                <ArrowUpRight className="size-3" />
+              </ChatEntityLink>
             </div>
             <div className="flex items-center gap-3 text-xs text-muted-foreground">
               {c.email && (

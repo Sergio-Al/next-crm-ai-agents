@@ -4,11 +4,14 @@ import { useCallback, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChatPanel } from "@/components/chat-panel";
 import { ConversationSidebar } from "@/components/conversation-sidebar";
+import { ChatEntityDrawer } from "@/components/chat/chat-entity-drawer";
 
 export default function ChatPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeId = searchParams.get("id");
+  const drawerType = searchParams.get("drawerType");
+  const drawerId = searchParams.get("drawerId");
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Stable key for ChatPanel — only changes on explicit user navigation,
@@ -66,6 +69,9 @@ export default function ChatPage() {
           onConversationCreated={handleConversationCreated}
         />
       </div>
+      {drawerId && (drawerType === "account" || drawerType === "contact") && (
+        <ChatEntityDrawer type={drawerType} entityId={drawerId} />
+      )}
     </>
   );
 }

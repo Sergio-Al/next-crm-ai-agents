@@ -4,6 +4,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useTranslations } from "next-intl";
 import { Mail, Phone, Building2, Tag, DollarSign } from "lucide-react";
+import { ChatEntityLink } from "./chat-entity-link";
 
 interface Contact {
   id: string;
@@ -42,9 +43,13 @@ export function ContactDetailCard({
           </AvatarFallback>
         </Avatar>
         <div>
-          <div className="font-medium">
+          <ChatEntityLink
+            type="contact"
+            entityId={contact.id}
+            className="font-medium hover:text-primary transition-colors"
+          >
             {contact.firstName} {contact.lastName}
-          </div>
+          </ChatEntityLink>
           {contact.source && (
             <Badge variant="secondary" className="text-[10px] mt-0.5">
               {contact.source}

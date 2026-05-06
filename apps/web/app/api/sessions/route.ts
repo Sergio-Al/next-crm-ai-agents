@@ -5,6 +5,8 @@ import {
   type SessionStep,
 } from "@/lib/session-persistence";
 import { enqueueStep } from "@/lib/session-queue";
+import { getDb } from "@/lib/db";
+import * as schema from "@crm-agent/shared/db/schema";
 
 /**
  * GET /api/sessions — List agent sessions.
@@ -36,10 +38,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const db = getDb();
+  const workspace = await db.query.workspaces.findFirst();
+  if (!workspace) {
+    console.error("No workspace found when creating session");
+    return NextResponse.json({ error: "No workspace found" }, { status: 500 });
+  }
+
   const session = await createSession({
     goal,
     plan: plan as SessionStep[],
     conversationId: conversationId ?? null,
+    workspaceId: workspace.id,
   });
 
   // Enqueue the first step

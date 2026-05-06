@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,8 +13,23 @@ import {
   Bell,
   Settings,
   UserCheck,
+  Loader2,
+  Check,
+  XCircle,
+  Pause,
 } from "lucide-react";
 import { Link } from "@/i18n/navigation";
+
+interface LiveEvent {
+  type: string;
+  stepIndex?: number;
+  description?: string;
+  stepType?: string;
+  duration?: string;
+  reasoningText?: string;
+  action?: string;
+  error?: string;
+}
 
 const STEP_ICONS: Record<string, typeof Zap> = {
   crm_action: Settings,
@@ -50,10 +65,54 @@ interface Props {
 export function SessionPlanCard({ args, toolCallId, addToolResult }: Props) {
   const t = useTranslations("sessionPlan");
   const tc = useTranslations("common");
+  const tf = useTranslations("sessionLiveFeed");
   const [goal] = useState(args.goal ?? "");
   const [steps, setSteps] = useState<StepDef[]>(args.steps ?? []);
   const [submitting, setSubmitting] = useState(false);
   const [createdId, setCreatedId] = useState<string | null>(null);
+  const [liveEvents, setLiveEvents] = useState<LiveEvent[]>([]);
+  const sourceRef = useRef<EventSource | null>(null);
+
+  // Subscribe to SSE feed once a session has been created
+  useEffect(() => {
+    if (!createdId) return;
+    const es = new EventSource(`/api/sessions/${createdId}/stream`);
+    sourceRef.current = es;
+
+    const handle = (ev: MessageEvent) => {
+      try {
+        const parsed = JSON.parse(ev.data) as LiveEvent;
+        setLiveEvents((prev) => [...prev, parsed].slice(-10));
+      } catch {
+        // ignore malformed payloads
+      }
+    };
+
+    const eventTypes = [
+      "step_started",
+      "step_completed",
+      "step_failed",
+      "wait_scheduled",
+      "human_checkpoint_requested",
+      "ai_reasoning",
+      "crm_action_result",
+      "session_completed",
+    ];
+    for (const type of eventTypes) {
+      es.addEventListener(type, handle as EventListener);
+    }
+    es.addEventListener("finish", () => {
+      es.close();
+    });
+    es.onerror = () => {
+      es.close();
+    };
+
+    return () => {
+      es.close();
+      sourceRef.current = null;
+    };
+  }, [createdId]);
 
   const removeStep = (index: number) => {
     setSteps((prev) => prev.filter((_, i) => i !== index));
@@ -93,15 +152,97 @@ export function SessionPlanCard({ args, toolCallId, addToolResult }: Props) {
 
   if (createdId) {
     return (
-      <div className="rounded-md border border-green-500/30 bg-green-500/5 p-4 space-y-2">
+      <div className="rounded-md border border-green-500/30 bg-green-500/5 p-4 space-y-3">
         <p className="text-sm text-green-400">
           ✓ {t("success")}
         </p>
+
+        {liveEvents.length > 0 && (
+          <ul className="space-y-1.5 border-t border-green-500/20 pt-2">
+            {liveEvents.map((ev, i) => {
+              const stepNum = (ev.stepIndex ?? 0) + 1;
+              switch (ev.type) {
+                case "step_started":
+                  return (
+                    <li key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="size-3.5 animate-spin text-primary shrink-0" />
+                      <span className="truncate">
+                        {tf("stepStarted", { step: stepNum, description: ev.description ?? "" })}
+                      </span>
+                    </li>
+                  );
+                case "step_completed":
+                  return (
+                    <li key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Check className="size-3.5 text-green-500 shrink-0" />
+                      <span>{tf("stepCompleted", { step: stepNum })}</span>
+                    </li>
+                  );
+                case "wait_scheduled":
+                  return (
+                    <li key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Clock className="size-3.5 shrink-0" />
+                      <span>{tf("waitScheduled", { duration: ev.duration ?? "" })}</span>
+                    </li>
+                  );
+                case "human_checkpoint_requested":
+                  return (
+                    <li key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Pause className="size-3.5 text-amber-500 shrink-0" />
+                      <span>{tf("humanCheckpoint")}</span>
+                    </li>
+                  );
+                case "ai_reasoning":
+                  return (
+                    <li key={i} className="flex items-start gap-2 text-xs text-muted-foreground">
+                      <Brain className="size-3.5 text-primary shrink-0 mt-0.5" />
+                      <details className="min-w-0 flex-1">
+                        <summary className="cursor-pointer">
+                          {tf("aiReasoning")}
+                        </summary>
+                        <p className="mt-1 whitespace-pre-wrap text-muted-foreground/80">
+                          {ev.reasoningText}
+                        </p>
+                      </details>
+                    </li>
+                  );
+                case "crm_action_result":
+                  return (
+                    <li key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Settings className="size-3.5 shrink-0" />
+                      <span className="truncate">
+                        {tf("crmActionResult", { action: ev.action ?? "" })}
+                      </span>
+                    </li>
+                  );
+                case "step_failed":
+                  return (
+                    <li key={i} className="flex items-center gap-2 text-xs text-destructive">
+                      <XCircle className="size-3.5 shrink-0" />
+                      <span className="truncate">
+                        {tf("stepFailed", { step: stepNum, error: ev.error ?? "" })}
+                      </span>
+                    </li>
+                  );
+                case "session_completed":
+                  return (
+                    <li key={i} className="flex items-center gap-2 text-xs text-green-500">
+                      <Check className="size-3.5 shrink-0" />
+                      <span>{tf("sessionCompleted")}</span>
+                    </li>
+                  );
+                default:
+                  return null;
+              }
+            })}
+          </ul>
+        )}
+
         <Link
           href={`/sessions/${createdId}`}
           className="text-sm text-primary underline underline-offset-2"
         >
-          {t("viewLink")}
+          {liveEvents.length > 0 ? tf("viewTimeline") : t("viewLink")}
         </Link>
       </div>
     );

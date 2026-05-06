@@ -8,6 +8,7 @@ import {
   bigint,
   boolean,
   decimal,
+  doublePrecision,
   timestamp,
   date,
   jsonb,
@@ -199,12 +200,27 @@ export const crmAccounts = pgTable(
     industry: varchar("industry", { length: 200 }),
     size: varchar("size", { length: 50 }),
     website: text("website"),
+    nombreComercial: varchar("nombre_comercial", { length: 300 }),
+    nitCi: varchar("nit_ci", { length: 50 }),
+    categoriaVentas: varchar("categoria_ventas", { length: 5 }),
+    condicionPago: varchar("condicion_pago", { length: 20 }),
+    tipoCuenta: varchar("tipo_cuenta", { length: 50 }),
+    sourceAccountType: varchar("source_account_type", { length: 50 }),
+    limiteCredito: decimal("limite_credito", { precision: 15, scale: 2 }),
+    bloqueoEntrega: boolean("bloqueo_entrega").default(false),
+    bloqueoFactura: boolean("bloqueo_factura").default(false),
+    lat: decimal("lat", { precision: 10, scale: 7 }),
+    lng: decimal("lng", { precision: 10, scale: 7 }),
+    zonaVentas: varchar("zona_ventas", { length: 20 }),
+    idRegional: varchar("id_regional", { length: 20 }),
     // SuiteCRM SAP customer code (accounts_cstm.idcuentasap_c) — shortcut FK
     // used to resolve hanpe_pedidos.kunnr_c → crm_accounts without traversing
     // task → visit. Populated by the account-cstm CDC handler.
     sapAccountId: varchar("sap_account_id", { length: 50 }),
+    relacionPrincipal: jsonb("relacion_principal").default({}),
     customFields: jsonb("custom_fields").default({}),
     tags: text("tags").array().default([]),
+    embedding: vector("embedding", { dimensions: 1536 }),
     externalId: varchar("external_id", { length: 36 }),
     externalSource: varchar("external_source", { length: 50 }),
     createdBy: uuid("created_by").references(() => users.id),
@@ -215,6 +231,8 @@ export const crmAccounts = pgTable(
     index("IX_crm_accounts_workspace").on(t.workspaceId),
     uniqueIndex("IX_crm_accounts_external").on(t.workspaceId, t.externalSource, t.externalId),
     index("IX_crm_accounts_sap").on(t.workspaceId, t.sapAccountId),
+    index("IX_crm_accounts_zona").on(t.workspaceId, t.zonaVentas),
+    index("IX_crm_accounts_regional").on(t.workspaceId, t.idRegional),
   ],
 );
 
@@ -598,7 +616,27 @@ export const tools = pgTable("tools", {
   skillName: varchar("skill_name", { length: 200 }),
   schemaJson: jsonb("schema_json"),
   enabled: boolean("enabled").default(true),
+  // Registry extensions ---------------------------------------------------
+  // 'static'  → handler in apps/web/app/tools/* (handlerKey in config)
+  // 'http'    → external REST executor (url/method/headers/bodyTemplate in config)
+  // 'query'   → visual query builder (deferred; column reserved for future)
+  kind: varchar("kind", { length: 20 }).notNull().default("static"),
+  // System-prompt fragment that steers the LLM toward this tool. Editable by non-devs.
+  systemPromptHint: text("system_prompt_hint"),
+  // True = preview/confirmation tool (no execute, rendered as form client-side).
+  hitl: boolean("hitl").notNull().default(false),
+  // Null = global tool available to all workspaces.
+  workspaceId: uuid("workspace_id").references(() => workspaces.id, {
+    onDelete: "cascade",
+  }),
+  // Drives both Zod schema generation and admin form UI from one source.
+  // Shape: Array<{ name, type: 'string'|'number'|'boolean'|'enum', optional?, description?, min?, max?, enum?: string[] }>
+  inputSchema: jsonb("input_schema"),
+  // Kind-specific payload: { handlerKey } | { url, method, headers, bodyTemplate } | { table, columns, ... }
+  config: jsonb("config"),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
 export const channels = pgTable("channels", {
@@ -1316,6 +1354,11 @@ export const suiteRecoPedidos = suiteReco.table(
     productsQuantity: integer("products_quantity"),
     contactoSolId: varchar("contacto_sol_id", { length: 36 }),
     estadoSync: varchar("estado_sync", { length: 100 }),
+    // Delivery GPS coordinates from jjwg_maps_lat_c / jjwg_maps_lng_c.
+    lat: doublePrecision("lat"),
+    lng: doublePrecision("lng"),
+    // Free-text order description from hanpe_pedidos.description.
+    description: text("description"),
     customFields: jsonb("custom_fields").default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),

@@ -5,6 +5,9 @@ import { useTranslations } from "next-intl";
 import { ContactListCard } from "./contact-list-card";
 import { ContactDetailCard } from "./contact-detail-card";
 import { DealListCard } from "./deal-list-card";
+import { AccountDetailCard } from "./account-detail-card";
+import { AccountListCard } from "./account-list-card";
+import { OrderAnomaliesCard } from "./order-anomalies-card";
 import { ContactFormCard } from "./contact-form-card";
 import { DealFormCard } from "./deal-form-card";
 import { StageUpdateCard } from "./stage-update-card";
@@ -12,6 +15,8 @@ import { SessionPlanCard } from "./session-plan-card";
 import { SessionStatusCard } from "./session-status-card";
 import { OrderFormCard } from "./order-form-card";
 import { OrderStatusCard } from "./order-status-card";
+import { ActivityLogCard } from "./activity-log-card";
+import { RescheduleDeliveriesCard } from "./reschedule-deliveries-card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2 } from "lucide-react";
 
@@ -99,6 +104,24 @@ export function ToolInvocationRenderer({ part, addToolResult }: Props) {
         />
       );
     }
+    if (toolName === "previewLogActivity") {
+      return (
+        <ActivityLogCard
+          args={args}
+          toolCallId={toolCallId}
+          addToolResult={legacyAddToolResult}
+        />
+      );
+    }
+    if (toolName === "previewRescheduleDeliveries") {
+      return (
+        <RescheduleDeliveriesCard
+          args={args as { fromDate: string; toDate: string; reason?: string }}
+          toolCallId={toolCallId}
+          addToolResult={legacyAddToolResult}
+        />
+      );
+    }
 
     // Read tools show loading
     return (
@@ -116,8 +139,25 @@ export function ToolInvocationRenderer({ part, addToolResult }: Props) {
     if (toolName === "searchContacts" && result?.contacts) {
       return <ContactListCard contacts={result.contacts} />;
     }
+    if (toolName === "searchAccounts" && result?.accounts) {
+      return <AccountListCard accounts={result.accounts} />;
+    }
     if (toolName === "getContact" && result?.contact) {
       return <ContactDetailCard contact={result.contact} deals={result.deals} />;
+    }
+    if (toolName === "getAccount" && result?.account) {
+      return (
+        <AccountDetailCard
+          account={result.account}
+          contacts={result.contacts ?? []}
+          deals={result.deals ?? []}
+          orderStats={result.orderStats ?? null}
+          recentOrders={result.recentOrders ?? []}
+        />
+      );
+    }
+    if (toolName === "detectOrderAnomalies" && result?.anomalies) {
+      return <OrderAnomaliesCard anomalies={result.anomalies} />;
     }
     if (toolName === "searchDeals" && result?.deals) {
       return <DealListCard deals={result.deals} />;
@@ -145,7 +185,8 @@ export function ToolInvocationRenderer({ part, addToolResult }: Props) {
       toolName === "previewUpdateDealStage" ||
       toolName === "previewCreateSession" ||
       toolName === "previewCreateOrder" ||
-      toolName === "previewUpdateOrderStatus"
+      toolName === "previewUpdateOrderStatus" ||
+      toolName === "previewRescheduleDeliveries"
     ) {
       if (result?.cancelled) {
         return (

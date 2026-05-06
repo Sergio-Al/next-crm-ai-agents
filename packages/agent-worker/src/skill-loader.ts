@@ -70,11 +70,31 @@ export async function loadSkills(
         dealId: z.string().uuid().optional().describe("Associated deal ID"),
       }),
       execute: async (params) => {
-        // TODO: Connect to PostgreSQL activities table
-        return {
-          ...params,
-          message: "Activity logging not yet connected to database",
-        };
+        if (!workspaceId) {
+          return { error: "workspace context missing" };
+        }
+        const { createDb } = await import("@crm-agent/shared/db");
+        const schema = await import("@crm-agent/shared/db/schema");
+
+        const db = createDb(
+          process.env.DATABASE_URL ??
+            process.env.POSTGRES_URL ??
+            "postgresql://platform:platform@localhost:6432/platform",
+        );
+
+        const [activity] = await db
+          .insert(schema.activities)
+          .values({
+            workspaceId,
+            type: params.type,
+            subject: params.subject,
+            body: params.body ?? null,
+            contactId: params.contactId ?? null,
+            dealId: params.dealId ?? null,
+          })
+          .returning();
+
+        return { activity };
       },
     },
 

@@ -25,7 +25,62 @@
     "orders": "Pedidos",
     "pipeline": "Embudo",
     "chat": "Chat",
-    "sessions": "Sesiones"
+    "sessions": "Sesiones",
+    "tools": "Herramientas"
+  },
+  "adminTools": {
+    "title": "Registro de Herramientas",
+    "subtitle": "Gestiona herramientas del chat, integraciones e instrucciones del sistema. Activa herramientas, edita descripciones o conecta nuevas fuentes HTTP.",
+    "count": "{count, plural, =0 {Sin herramientas} one {# herramienta} other {# herramientas}}",
+    "newTool": "Nueva herramienta HTTP",
+    "colName": "Nombre",
+    "colKind": "Tipo",
+    "colHitl": "HITL",
+    "colEnabled": "Activa",
+    "colCalls": "Llamadas recientes",
+    "colUpdated": "Actualizada",
+    "kindStatic": "Estática",
+    "kindHttp": "HTTP",
+    "kindQuery": "Consulta",
+    "hitlYes": "Sí",
+    "hitlNo": "No",
+    "noTools": "Aún no hay herramientas. Haz clic en 'Nueva herramienta HTTP' para conectar una API externa.",
+    "searchPlaceholder": "Buscar por nombre o descripción",
+    "analyticsTitle": "Uso de herramientas",
+    "analyticsSubtitle": "Últimos 7 días, desde tool_calls.",
+    "analyticsCalls": "Llamadas",
+    "analyticsErrors": "Errores",
+    "analyticsP95": "p95 (ms)",
+    "analyticsTool": "Herramienta",
+    "form": {
+      "title": "Nueva herramienta HTTP",
+      "editTitle": "Editar herramienta",
+      "name": "Nombre",
+      "namePlaceholder": "getSapInvoice",
+      "description": "Descripción",
+      "descriptionPlaceholder": "Qué hace esta herramienta — se muestra al LLM como la descripción de la tool.",
+      "systemPromptHint": "Pista del prompt del sistema",
+      "systemPromptHintPlaceholder": "Usa getSapInvoice cuando el usuario pregunte por detalles de facturas SAP.",
+      "enabled": "Activa",
+      "hitl": "Humano en el loop (vista previa)",
+      "url": "URL",
+      "urlPlaceholder": "https://api.example.com/invoices/{{invoiceId}}",
+      "method": "Método",
+      "headers": "Cabeceras (JSON)",
+      "bodyTemplate": "Plantilla del cuerpo",
+      "inputSchema": "Parámetros de entrada",
+      "addParam": "Agregar parámetro",
+      "paramName": "Nombre",
+      "paramType": "Tipo",
+      "paramOptional": "Opcional",
+      "paramDescription": "Descripción",
+      "save": "Guardar herramienta",
+      "cancel": "Cancelar",
+      "delete": "Eliminar",
+      "deleteConfirm": "¿Eliminar esta herramienta? Dejará de aparecer en el chat de inmediato.",
+      "saveError": "Falló el guardado",
+      "saving": "Guardando..."
+    }
   },
   "chat": {
     "heading": "¿En qué puedo ayudarte?",
@@ -87,6 +142,34 @@
     "createButton": "Crear Contacto",
     "creating": "Creando..."
   },
+  "activityForm": {
+    "title": "Registrar Actividad",
+    "type": "Tipo",
+    "type_call": "Llamada",
+    "type_email": "Correo",
+    "type_meeting": "Reunión",
+    "type_note": "Nota",
+    "type_task": "Tarea",
+    "subject": "Asunto",
+    "body": "Notas",
+    "contact": "Contacto",
+    "deal": "Negocio",
+    "scheduledAt": "Programado para",
+    "durationMin": "Duración (minutos)",
+    "confirmButton": "Registrar Actividad",
+    "cancelButton": "Cancelar",
+    "saving": "Guardando...",
+    "success": "Actividad registrada"
+  },
+  "notifications": {
+    "title": "Notificaciones",
+    "aria": "Notificaciones",
+    "markAllRead": "Marcar todas como leídas",
+    "markRead": "Marcar como leída",
+    "empty": "Aún no hay notificaciones",
+    "loading": "Cargando...",
+    "view": "Ver"
+  },
   "stageUpdate": {
     "title": "Mover Etapa del Negocio",
     "dealLabel": "Negocio:",
@@ -104,6 +187,16 @@
     "status_delivered": "Entregado",
     "status_cancelled": "Cancelado"
   },
+  "rescheduleDeliveries": {
+    "title": "Reprogramar Entregas",
+    "fromLabel": "Fecha original:",
+    "toLabel": "Nueva fecha:",
+    "reasonLabel": "Motivo:",
+    "affectedLabel": "{count} entrega programada para esta fecha será movida.",
+    "confirmButton": "Confirmar Reprogramación",
+    "rescheduling": "Reprogramando...",
+    "jobEnqueued": "Trabajo de reprogramación encolado ({count} pedidos)."
+  },
   "sessionPlan": {
     "title": "Crear Sesión de Agente",
     "goalLabel": "Objetivo",
@@ -119,6 +212,17 @@
     "stepAiReasoning": "Razonamiento IA",
     "stepHumanCheckpoint": "Punto de Control Humano"
   },
+  "sessionLiveFeed": {
+    "stepStarted": "Paso {step}: {description}",
+    "stepCompleted": "Paso {step} completado",
+    "stepFailed": "Paso {step} falló: {error}",
+    "waitScheduled": "Esperando {duration}",
+    "humanCheckpoint": "Esperando tu aprobación",
+    "aiReasoning": "Razonamiento IA",
+    "crmActionResult": "Acción CRM: {action}",
+    "sessionCompleted": "Sesión completada",
+    "viewTimeline": "Ver línea de tiempo completa →"
+  },
   "sessionStatus": {
     "notFound": "Sesión no encontrada",
     "progress": "Progreso: {current}/{total}",
@@ -127,7 +231,13 @@
   },
   "contactList": {
     "found": "{count} contacto(s) encontrado(s)",
-    "notFound": "No se encontraron contactos."
+    "notFound": "No se encontraron contactos.",
+    "open": "Abrir"
+  },
+  "accountList": {
+    "found": "{count} cuenta(s) encontradas",
+    "notFound": "No se encontraron cuentas.",
+    "open": "Abrir"
   },
   "contactDetail": {
     "deals": "Negocios ({count})",
@@ -291,6 +401,10 @@
     "sheetTitleContact": "Contacto",
     "sheetTitleOrder": "Pedido",
     "sheetTitleAccount": "Cuenta",
+    "openFullPage": "Abrir página completa",
+    "openContact": "Abrir contacto",
+    "openAccount": "Abrir cuenta",
+    "noSecondaryInfo": "Sin correo ni teléfono",
     "suggestAccountSummary": "Resumir cuenta",
     "suggestAccountSummaryDesc": "Vista rápida de ingresos, pedidos y contactos.",
     "suggestAccountSummaryPrompt": "Resume esta cuenta: ingresos, pedidos recientes y contactos clave.",
@@ -540,6 +654,28 @@
     "fieldNotes": "Notas",
     "notesPlaceholder": "Notas opcionales...",
     "createButton": "Crear Pedido",
-    "creating": "Creando..."
+    "creating": "Creando...",
+    "aiSuggested": "IA",
+    "loadingSuggestions": "Cargando sugerencias IA..."
+  },
+  "accountDetail": {
+    "statOrders": "Pedidos",
+    "statRevenue": "Ingresos",
+    "statLastOrder": "Último Pedido",
+    "sectionContacts": "Contactos ({count})",
+    "moreContacts": "+{count} más",
+    "sectionRecentOrders": "Pedidos Recientes",
+    "sectionDeals": "Oportunidades ({count})",
+    "noOrders": "Sin pedidos"
+  },
+  "orderAnomalies": {
+    "found": "{count} anomalía(s) encontrada(s)",
+    "noAnomalies": "No se detectaron anomalías en pedidos.",
+    "type_overdue_delivery": "Entrega Vencida",
+    "type_stuck_confirmed": "Confirmado Bloqueado",
+    "type_sap_error": "Error Sync SAP",
+    "severity_warning": "Advertencia",
+    "severity_critical": "Crítico",
+    "daysSince": "hace {count}d"
   }
 }
